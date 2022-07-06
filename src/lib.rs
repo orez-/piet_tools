@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use image::{self, DynamicImage, GenericImageView, Rgb, Rgba};
 use itertools::iproduct;
@@ -16,6 +18,8 @@ pub trait GetAllEqualIterator<T>: Iterator<Item = T> {
 
 impl<T, I: Iterator<Item = T>> GetAllEqualIterator<T> for I {}
 
+type Coord = (usize, usize);
+type PietInt = i128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Hue {
@@ -74,11 +78,11 @@ impl Color {
             else { return Command::Noop; };
         let hue_step = (next_hue as i32 - hue as i32).rem_euclid(6);
         let light_step = (next_lightness as i32 - lightness as i32).rem_euclid(3);
-        FromPrimitive::from_i32(light_step * 6 + hue_step).unwrap()
+        FromPrimitive::from_i32(light_step + hue_step * 3).unwrap()
     }
 }
 
-#[derive(FromPrimitive)]
+#[derive(FromPrimitive, Debug)]
 enum Command {
     Noop = 0,
     Push = 1,
@@ -166,10 +170,185 @@ impl From<Rgba<u8>> for Color {
     }
 }
 
+#[derive(Debug)]
 pub struct PietCode {
     width: usize,
     height: usize,
     code: Vec<Color>,
+}
+
+impl PietCode {
+    fn at(&self, x: usize, y: usize) -> Option<Color> {
+        if x >= self.width || y >= self.height { return None; }
+        Some(self.code[x + y * self.width])
+    }
+
+    fn region_at(&self, x: usize, y: usize) -> Option<CodelRegion> {
+        let color = self.at(x, y)?;
+        if color == Color::Black { return None; }
+        let mut seen = HashSet::new();
+        seen.insert((x, y));
+        let mut queue = VecDeque::new();
+        queue.push_back((x, y));
+        while let Some((x, y)) = queue.pop_front() {
+            for (dx, dy) in [(0, 1), (1, 0), (0, usize::MAX), (usize::MAX, 0)] {
+                let nx = x.wrapping_add(dx);
+                let ny = y.wrapping_add(dy);
+                if self.at(nx, ny).map_or(true, |n| n != color) { continue; }
+                if !seen.insert((nx, ny)) { continue; }
+                queue.push_back((nx, ny));
+            }
+        }
+        Some(CodelRegion::new(seen, color))
+    }
+
+    pub fn execute<'a>(&'a self) -> PietRun<'a> {
+        PietRun::new(self)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Direction {
+    Right,
+    Down,
+    Left,
+    Up,
+}
+
+#[derive(Clone, Copy)]
+enum CodelChoice { Left, Right }
+
+pub struct CodelRegion {
+    pub(crate) color: Color,
+    pub(crate) region: HashSet<Coord>,
+}
+
+impl CodelRegion {
+    fn new(region: HashSet<Coord>, color: Color) -> Self {
+        CodelRegion {
+            color,
+            region,
+        }
+    }
+
+    fn value(&self) -> PietInt {
+        self.region.len() as PietInt
+    }
+
+    fn exit_to(&self, ip: InstructionPointer) -> Coord {
+        let InstructionPointer(dp, cc) = ip;
+        match (dp, cc) {
+            (Direction::Right, CodelChoice::Left) => {
+                let (x, y) = *self.region.iter().max_by_key(|(x, y)| (x, Reverse(y))).unwrap();
+                (x + 1, y)
+            }
+            (Direction::Right, CodelChoice::Right) => {
+                let (x, y) = *self.region.iter().max_by_key(|(x, y)| (x, y)).unwrap();
+                (x + 1, y)
+            }
+            (Direction::Down, CodelChoice::Left) => {
+                let (x, y) = *self.region.iter().max_by_key(|(x, y)| (y, x)).unwrap();
+                (x, y + 1)
+            }
+            (Direction::Down, CodelChoice::Right) => {
+                let (x, y) = *self.region.iter().max_by_key(|(x, y)| (y, Reverse(x))).unwrap();
+                (x, y + 1)
+            }
+            (Direction::Left, CodelChoice::Left) => {
+                let (x, y) = *self.region.iter().min_by_key(|(x, y)| (x, Reverse(y))).unwrap();
+                (x.wrapping_sub(1), y)
+            }
+            (Direction::Left, CodelChoice::Right) => {
+                let (x, y) = *self.region.iter().min_by_key(|(x, y)| (x, y)).unwrap();
+                (x.wrapping_sub(1), y)
+            }
+            (Direction::Up, CodelChoice::Left) => {
+                let (x, y) = *self.region.iter().min_by_key(|(x, y)| (y, x)).unwrap();
+                (x, y.wrapping_sub(1))
+            }
+            (Direction::Up, CodelChoice::Right) => {
+                let (x, y) = *self.region.iter().min_by_key(|(x, y)| (y, Reverse(x))).unwrap();
+                (x, y.wrapping_sub(1))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct InstructionPointer(Direction, CodelChoice);
+
+impl InstructionPointer {
+    fn flip(&mut self) {
+        self.1 = match self.1 {
+            CodelChoice::Left => CodelChoice::Right,
+            CodelChoice::Right => CodelChoice::Left,
+        }
+    }
+
+    fn rotate(&mut self) {
+        self.0 = match self.0 {
+            Direction::Right => Direction::Down,
+            Direction::Down => Direction::Left,
+            Direction::Left => Direction::Up,
+            Direction::Up => Direction::Right,
+        };
+    }
+}
+
+pub struct PietRun<'a> {
+    instruction_pointer: InstructionPointer,
+    region: CodelRegion,
+    code: &'a PietCode,
+    stack: Vec<PietInt>,
+}
+
+impl<'a> PietRun<'a> {
+    fn new(code: &'a PietCode) -> Self {
+        let instruction_pointer = InstructionPointer(Direction::Right, CodelChoice::Left);
+        let region = code.region_at(0, 0).unwrap();  // TODO: 👀
+        Self { instruction_pointer, code, region, stack: Vec::new() }
+    }
+
+    fn next_region(&mut self) -> Option<CodelRegion> {
+        for _ in 0..4 {
+            let (x, y) = self.region.exit_to(self.instruction_pointer);
+            if let Some(region) = self.code.region_at(x, y) {
+                return Some(region);
+            }
+            self.instruction_pointer.flip();
+
+            let (x, y) = self.region.exit_to(self.instruction_pointer);
+            if let Some(region) = self.code.region_at(x, y) {
+                return Some(region);
+            }
+            // TODO: unclear from the docs if we also flip, or not.
+            // doublecheck with other implementations
+            // self.instruction_pointer.flip();
+            self.instruction_pointer.rotate();
+        }
+        None
+    }
+
+    // TODO: bool sucks
+    pub fn step(&mut self) -> bool {
+        println!("{:?} {:?}", self.region.color, self.region.region);
+        let next_region = if let Some(r) = self.next_region() { r }
+            else { return false; };
+        let command = self.region.color.step_to(next_region.color);
+        println!("({:?} -> {:?}) = {command:?}", self.region.color, next_region.color);
+        match command {
+            Command::Push => {
+                self.stack.push(self.region.value());
+            }
+            c => { panic!("{c:?}"); }
+        }
+        self.region = next_region;
+        true
+    }
+
+    pub fn run(&mut self) {
+        while self.step() {}
+    }
 }
 
 pub fn load(filename: &str, codel_size: u32) -> Result<PietCode, String>  {
@@ -186,13 +365,16 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
     let height = h / codel_size;
     match img {
         DynamicImage::ImageRgb8(img) => {
-            let code = iproduct!(0..width, 0..height)
-                .map(|(x, y)| {
-                    img.view(x, y, codel_size, codel_size)
+            let code = iproduct!(0..height, 0..width)
+                .map(|(y, x)| {
+                    img.view(x * codel_size, y * codel_size, codel_size, codel_size)
                         .pixels()
                         .map(|(_, _, px)| px)
                         .get_all_equal()
-                        // TODO: error on None
+                        // TODO: options to:
+                        // - error on None
+                        // - error on Other
+                        // - black on Other
                         .map_or(Color::Other, |px| px.into())
                 })
                 .collect();

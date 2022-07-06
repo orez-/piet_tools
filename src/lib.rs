@@ -72,10 +72,18 @@ impl Color {
 
 impl Color {
     fn step_to(self, next: Color) -> Command {
-        let (hue, lightness) = if let Color::Color(h, l) = self { (h, l) }
-            else { return Command::Noop; };
-        let (next_hue, next_lightness) = if let Color::Color(h, l) = next { (h, l) }
-            else { return Command::Noop; };
+        let (hue, lightness) = match self {
+            Color::Color(h, l) => { (h, l) }
+            Color::White => { return Command::Noop; }
+            Color::Black => { panic!(); }
+            Color::Other => { panic!(); }
+        };
+        let (next_hue, next_lightness) = match next {
+            Color::Color(h, l) => { (h, l) }
+            Color::White => { return Command::Noop; }
+            Color::Black => { panic!(); }
+            Color::Other => { panic!(); }
+        };
         let hue_step = (next_hue as i32 - hue as i32).rem_euclid(6);
         let light_step = (next_lightness as i32 - lightness as i32).rem_euclid(3);
         FromPrimitive::from_i32(light_step + hue_step * 3).unwrap()
@@ -344,7 +352,7 @@ impl<'a> PietRun<'a> {
             Command::Push => {
                 self.stack.push(self.region.value());
             }
-            Command::Pop => { todo!(); }
+            Command::Pop => { self.stack.pop()?; }
             Command::Add => {
                 let (a, b) = self.pop2()?;
                 self.stack.push(a + b);
@@ -357,20 +365,52 @@ impl<'a> PietRun<'a> {
                 let (a, b) = self.pop2()?;
                 self.stack.push(a * b);
             }
-            Command::Divide => { todo!(); }
-            Command::Mod => { todo!(); }
-            Command::Not => { todo!(); }
-            Command::Greater => { todo!(); }
-            Command::Pointer => { todo!(); }
-            Command::Switch => { todo!(); }
+            Command::Divide => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(a.div_euclid(b));
+            }
+            Command::Mod => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(a.rem_euclid(b));
+            }
+            Command::Not => {
+                let num = self.stack.pop()?;
+                self.stack.push(if num == 0 { 1 } else { 0 });
+            }
+            Command::Greater => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(if a > b { 1 } else { 0 });
+            }
+            Command::Pointer => {
+                let spin = self.stack.pop()?;
+                for _ in 0..spin.rem_euclid(4) {
+                    self.instruction_pointer.rotate();
+                }
+            }
+            Command::Switch => {
+                let swap = self.stack.pop()?;
+                if swap % 2 != 0 {
+                    self.instruction_pointer.flip();
+                }
+            }
             Command::Duplicate => {
                 let top = *self.stack.last()?;
                 self.stack.push(top);
             }
-            Command::Roll => { todo!(); }
+            Command::Roll => {
+                let (dive, roll) = self.pop2()?;
+                if dive < 0 { panic!(); }  // TODO: exit without popping
+                let dive = dive as usize;
+                let roll = (roll as usize).div_euclid(dive);
+                let start = self.stack.len() - dive;
+                self.stack[start..].rotate_right(roll);
+            }
             Command::InNum => { todo!(); }
             Command::InChar => { todo!(); }
-            Command::OutNum => { todo!(); }
+            Command::OutNum => {
+                let num = self.stack.pop()?;
+                print!("{num}");
+            }
             Command::OutChar => {
                 let num = self.stack.pop()?;
                 let chr = num as u8 as char;  // TODO: 👀

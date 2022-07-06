@@ -329,19 +329,64 @@ impl<'a> PietRun<'a> {
         None
     }
 
-    // TODO: bool sucks
-    pub fn step(&mut self) -> bool {
-        println!("{:?} {:?}", self.region.color, self.region.region);
-        let next_region = if let Some(r) = self.next_region() { r }
-            else { return false; };
-        let command = self.region.color.step_to(next_region.color);
-        println!("({:?} -> {:?}) = {command:?}", self.region.color, next_region.color);
+    fn pop2(&mut self) -> Option<(PietInt, PietInt)> {
+        if self.stack.len() < 2 {
+            return None;
+        }
+        let b = self.stack.pop()?;
+        let a = self.stack.pop()?;
+        Some((a, b))
+    }
+
+    fn run_command(&mut self, command: Command) -> Option<()> {
         match command {
+            Command::Noop => {}
             Command::Push => {
                 self.stack.push(self.region.value());
             }
-            c => { panic!("{c:?}"); }
+            Command::Pop => { todo!(); }
+            Command::Add => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(a + b);
+            }
+            Command::Subtract => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(a - b);
+            }
+            Command::Multiply => {
+                let (a, b) = self.pop2()?;
+                self.stack.push(a * b);
+            }
+            Command::Divide => { todo!(); }
+            Command::Mod => { todo!(); }
+            Command::Not => { todo!(); }
+            Command::Greater => { todo!(); }
+            Command::Pointer => { todo!(); }
+            Command::Switch => { todo!(); }
+            Command::Duplicate => {
+                let top = *self.stack.last()?;
+                self.stack.push(top);
+            }
+            Command::Roll => { todo!(); }
+            Command::InNum => { todo!(); }
+            Command::InChar => { todo!(); }
+            Command::OutNum => { todo!(); }
+            Command::OutChar => {
+                let num = self.stack.pop()?;
+                let chr = num as u8 as char;  // TODO: 👀
+                print!("{chr}");
+            }
         }
+        Some(())
+    }
+
+    // TODO: bool sucks
+    pub fn step(&mut self) -> bool {
+        let next_region = if let Some(r) = self.next_region() { r }
+            else { return false; };
+        let command = self.region.color.step_to(next_region.color);
+        eprintln!("({:?} ({}) -> {:?}) = {command:?}", self.region.color, self.region.value(), next_region.color);
+        self.run_command(command);
         self.region = next_region;
         true
     }

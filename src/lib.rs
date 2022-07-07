@@ -456,7 +456,15 @@ impl<'a> PietRun<'a> {
                 self.stack[start..].rotate_right(roll);
             }
             Command::InNum => { todo!(); }
-            Command::InChar => { todo!(); }
+            Command::InChar => {
+                // TODO: don't make this so stdin specific
+                use std::io::{self, Read};
+
+                let stdin = io::stdin();
+                let buf: &mut [u8] = &mut [0];
+                stdin.lock().read_exact(buf).ok()?;
+                self.stack.push(BigInt::from(buf[0]));
+            }
             Command::OutNum => {
                 let num = self.stack.pop()?;
                 print!("{num}");

@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
+use std::hash::Hash;
 use image::{self, DynamicImage, GenericImageView, Rgb, Rgba};
 use itertools::iproduct;
 use num_bigint::BigInt;
@@ -194,7 +195,6 @@ impl PietCode {
 
     fn region_at(&self, x: usize, y: usize) -> Option<CodelRegion> {
         let color = self.at(x, y)?;
-        if color == Color::Black { return None; }
         let mut seen = HashSet::new();
         seen.insert((x, y));
         let mut queue = VecDeque::new();
@@ -216,7 +216,7 @@ impl PietCode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Direction {
     Right,
     Down,
@@ -224,7 +224,18 @@ enum Direction {
     Up,
 }
 
-#[derive(Clone, Copy)]
+impl Direction {
+    fn to_delta(self) -> Coord {
+        match self {
+            Direction::Right => (1, 0),
+            Direction::Down => (0, 1),
+            Direction::Left => (usize::MAX, 0),
+            Direction::Up => (0, usize::MAX),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum CodelChoice { Left, Right }
 
 pub struct CodelRegion {
@@ -283,7 +294,7 @@ impl CodelRegion {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct InstructionPointer(Direction, CodelChoice);
 
 impl InstructionPointer {
@@ -306,33 +317,69 @@ impl InstructionPointer {
 
 pub struct PietRun<'a> {
     instruction_pointer: InstructionPointer,
-    region: CodelRegion,
+    pos: Coord,
     code: &'a PietCode,
     stack: Vec<BigInt>,
 }
 
 impl<'a> PietRun<'a> {
     fn new(code: &'a PietCode) -> Self {
-        let instruction_pointer = InstructionPointer(Direction::Right, CodelChoice::Left);
-        let region = code.region_at(0, 0).unwrap();  // TODO: 👀
-        Self { instruction_pointer, code, region, stack: Vec::new() }
+        Self {
+            code,
+            instruction_pointer: InstructionPointer(Direction::Right, CodelChoice::Left),
+            pos: (0, 0),
+            stack: Vec::new(),
+        }
     }
 
-    fn next_region(&mut self) -> Option<CodelRegion> {
+    // Fetch the next position to move to.
+    fn walk_color(&mut self) -> Option<(CodelRegion, Coord, Color)> {
+        let (x, y) = self.pos;
+        let region = self.code.region_at(x, y).unwrap();
+
         for _ in 0..4 {
-            let (x, y) = self.region.exit_to(self.instruction_pointer);
-            if let Some(region) = self.code.region_at(x, y) {
-                return Some(region);
+            let coord @ (x, y) = region.exit_to(self.instruction_pointer);
+            match self.code.at(x, y) {
+                None | Some(Color::Black) => (),
+                Some(Color::Other) => { panic!(); }
+                Some(color) => { return Some((region, coord, color)); }
             }
             self.instruction_pointer.flip();
 
-            let (x, y) = self.region.exit_to(self.instruction_pointer);
-            if let Some(region) = self.code.region_at(x, y) {
-                return Some(region);
+            let coord @ (x, y) = region.exit_to(self.instruction_pointer);
+            match self.code.at(x, y) {
+                None | Some(Color::Black) => (),
+                Some(Color::Other) => { panic!(); }
+                Some(color) => { return Some((region, coord, color)); }
             }
-            // TODO: unclear from the docs if we also flip, or not.
-            // doublecheck with other implementations
-            // self.instruction_pointer.flip();
+            self.instruction_pointer.rotate();
+        }
+        None
+    }
+
+    fn walk_white(&mut self) -> Option<(Coord, Color)> {
+        let mut seen = HashSet::new();
+        let (mut x, mut y) = self.pos;
+        let mut nx;
+        let mut ny;
+        while seen.insert((self.pos, self.instruction_pointer)) {
+            let InstructionPointer(dir, _) = self.instruction_pointer;
+            let (dx, dy) = dir.to_delta();
+            while let Some(color) = {
+                nx = x.wrapping_add(dx);
+                ny = y.wrapping_add(dy);
+                self.code.at(nx, ny)
+            } {
+                match color {
+                    Color::Black => { break; }
+                    Color::Other => { panic!(); }
+                    Color::White => {
+                        x = nx;
+                        y = ny;
+                    }
+                    color => { return Some(((nx, ny), color)); }
+                }
+            }
             self.instruction_pointer.rotate();
         }
         None
@@ -347,11 +394,11 @@ impl<'a> PietRun<'a> {
         Some((a, b))
     }
 
-    fn run_command(&mut self, command: Command) -> Option<()> {
+    fn run_command(&mut self, command: Command, value: BigInt) -> Option<()> {
         match command {
             Command::Noop => {}
             Command::Push => {
-                self.stack.push(self.region.value());
+                self.stack.push(value);
             }
             Command::Pop => { self.stack.pop()?; }
             Command::Add => {
@@ -425,13 +472,37 @@ impl<'a> PietRun<'a> {
 
     // TODO: bool sucks
     pub fn step(&mut self) -> bool {
-        let next_region = if let Some(r) = self.next_region() { r }
-            else { return false; };
-        let command = self.region.color.step_to(next_region.color);
-        eprintln!("({:?} ({}) -> {:?}) = {command:?}", self.region.color, self.region.value(), next_region.color);
-        self.run_command(command);
-        self.region = next_region;
-        true
+        let (x, y) = self.pos;
+        let color = self.code.at(x, y).unwrap();
+        match color {
+            Color::White => {
+                match self.walk_white() {
+                    Some((coord, color)) => {
+                        eprintln!("(White -> {color:?})");
+                        self.pos = coord;
+                        true
+                    }
+                    None => false,
+                }
+            }
+            Color::Color(..) => {
+                let (region, (x, y), next_color) = if let Some(v) = self.walk_color() { v }
+                    else { return false; };
+                let command = region.color.step_to(next_color);
+                let value = region.value();
+                eprintln!(
+                    "({:?} ({}) -> {:?}) = {command:?}",
+                    region.color,
+                    value,
+                    next_color,
+                );
+                self.run_command(command, value);
+                self.pos = (x, y);
+                true
+            }
+            Color::Other => { panic!(); }  // TODO
+            Color::Black => { panic!(); }
+        }
     }
 
     pub fn run(&mut self) {

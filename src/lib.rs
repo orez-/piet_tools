@@ -75,7 +75,7 @@ impl Color {
 impl Color {
     fn step_to(self, next: Color) -> Command {
         let (hue, lightness) = match self {
-            Color::Color(h, l) => { (h, l) }
+            Color::Color(h, l) => (h, l),
             Color::White => { return Command::Noop; }
             Color::Black => { panic!(); }
             Color::Other => { panic!(); }
@@ -211,7 +211,7 @@ impl PietCode {
         Some(CodelRegion::new(seen, color))
     }
 
-    pub fn execute<'a>(&'a self) -> PietRun<'a> {
+    pub fn execute(&self) -> PietRun<'_> {
         PietRun::new(self)
     }
 }
@@ -544,6 +544,6 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
             })
         }
         // DynamicImage::ImageRgba8(img) => img,
-        _ => { return Err("unsupported image type".to_string()); }
+        _ => { Err("unsupported image type".to_string()) }
     }
 }

@@ -315,6 +315,13 @@ impl InstructionPointer {
     }
 }
 
+impl Default for InstructionPointer {
+    fn default() -> Self {
+        InstructionPointer(Direction::Right, CodelChoice::Left)
+    }
+}
+
+#[derive(Default)]
 pub struct PietVM {
     instruction_pointer: InstructionPointer,
     pos: Coord,
@@ -323,11 +330,7 @@ pub struct PietVM {
 
 impl PietVM {
     fn new() -> Self {
-        Self {
-            instruction_pointer: InstructionPointer(Direction::Right, CodelChoice::Left),
-            pos: (0, 0),
-            stack: Vec::new(),
-        }
+        Self::default()
     }
 
     // Fetch the next position to move to.
@@ -448,7 +451,7 @@ impl PietVM {
             Command::Roll => {
                 let (dive, roll) = self.pop2()?;
                 if dive < BigInt::zero() { panic!(); }  // TODO: exit without popping
-                let roll = roll.div_floor(&dive).to_usize().unwrap();
+                let roll = roll.mod_floor(&dive).to_usize().unwrap();
                 let dive = dive.to_usize().unwrap();
                 let start = self.stack.len() - dive;
                 self.stack[start..].rotate_right(roll);
@@ -566,4 +569,20 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
         height: height as usize,
         code
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn to_stack(nums: &[i32]) -> Vec<BigInt> {
+        nums.into_iter().map(|e| (*e).into()).collect()
+    }
+
+    #[test]
+    fn test_roll() {
+        let mut vm = PietVM { stack: to_stack(&[4, 5, 6, 7, 8, 9, 3, 2]), ..Default::default() };
+        vm.run_command(Command::Roll, BigInt::zero());
+        assert_eq!(vm.stack, to_stack(&[4, 5, 6, 8, 9, 7]));
+    }
 }

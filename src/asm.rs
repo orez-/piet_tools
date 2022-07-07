@@ -15,14 +15,17 @@ enum AsmCommand {
     Mod,
     Not,
     Greater,
-    Pointer,
-    Switch,
+    // Pointer,
+    // Switch,
     Duplicate,
     Roll,
     InNum,
     InChar,
     OutNum,
     OutChar,
+    // --
+    Jump(String),
+    JumpIf(String),
 }
 
 #[derive(Debug)]
@@ -59,6 +62,7 @@ enum ParseErrorType {
     UnrecognizedCommand(String),
     WrongArgumentCount(usize, usize, Option<usize>),
     ExpectedInteger(String),
+    MissingLabel(String),
 }
 
 impl ParseErrorType {
@@ -79,6 +83,7 @@ fn validate_arg_count(count: usize, min: usize, max: Option<usize>) -> Result<()
 
 fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
     let mut labels = HashMap::new();
+    let mut missing_labels = HashMap::new();
     let mut cmds = Vec::new();
     for (lineno, line) in lines.iter().enumerate() {
         let lineno = lineno + 1;
@@ -88,6 +93,7 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
             let label = parse_identifier(&line[1..])
                 .map_err(|e| e.at(lineno))?;
             labels.insert(label, lineno);
+            missing_labels.remove(label);
             continue;
         }
         let mut terms = line.split_ascii_whitespace();
@@ -145,6 +151,15 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
                     _ => unreachable!(),
                 });
             }
+            "JUMP" | "JUMPIF" => {
+                let args: Result<Vec<_>, _> = terms.map(parse_identifier).collect();
+                let args = args.map_err(|e| e.at(lineno))?;
+                validate_arg_count(args.len(), 1, Some(1)).map_err(|e| e.at(lineno))?;
+                let label = args[0];
+                if !labels.contains_key(label) {
+                    missing_labels.entry(label).or_insert(lineno);
+                }
+            }
             // "POINTER" => (),
             // "SWITCH" => (),
             cmd => {
@@ -152,6 +167,10 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
                 return Err(ParseErrorType::UnrecognizedCommand(cmd).at(lineno));
             }
         }
+    }
+    if let Some((label, lineno)) = missing_labels.into_iter().next() {
+        // TODO: only grabs one here, not great.
+        return Err(ParseErrorType::MissingLabel(label.to_string()).at(lineno));
     }
     Ok(PietAsm { cmds })
 }

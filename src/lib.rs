@@ -9,6 +9,8 @@ use num_derive::FromPrimitive;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
 
+pub mod asm;
+
 pub trait GetAllEqualIterator<T>: Iterator<Item = T> {
     fn get_all_equal(&mut self) -> Option<T>
         where Self: Sized,

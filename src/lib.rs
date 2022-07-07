@@ -211,8 +211,8 @@ impl PietCode {
         Some(CodelRegion::new(seen, color))
     }
 
-    pub fn execute(&self) -> PietRun<'_> {
-        PietRun::new(self)
+    pub fn execute(&self) -> PietRunner<'_> {
+        PietRunner::new(self)
     }
 }
 
@@ -315,17 +315,15 @@ impl InstructionPointer {
     }
 }
 
-pub struct PietRun<'a> {
+pub struct PietVM {
     instruction_pointer: InstructionPointer,
     pos: Coord,
-    code: &'a PietCode,
     stack: Vec<BigInt>,
 }
 
-impl<'a> PietRun<'a> {
-    fn new(code: &'a PietCode) -> Self {
+impl PietVM {
+    fn new() -> Self {
         Self {
-            code,
             instruction_pointer: InstructionPointer(Direction::Right, CodelChoice::Left),
             pos: (0, 0),
             stack: Vec::new(),
@@ -333,13 +331,13 @@ impl<'a> PietRun<'a> {
     }
 
     // Fetch the next position to move to.
-    fn walk_color(&mut self) -> Option<(CodelRegion, Coord, Color)> {
+    fn walk_color(&mut self, code: &PietCode) -> Option<(CodelRegion, Coord, Color)> {
         let (x, y) = self.pos;
-        let region = self.code.region_at(x, y).unwrap();
+        let region = code.region_at(x, y).unwrap();
 
         for _ in 0..4 {
             let coord @ (x, y) = region.exit_to(self.instruction_pointer);
-            match self.code.at(x, y) {
+            match code.at(x, y) {
                 None | Some(Color::Black) => (),
                 Some(Color::Other) => { panic!(); }
                 Some(color) => { return Some((region, coord, color)); }
@@ -347,7 +345,7 @@ impl<'a> PietRun<'a> {
             self.instruction_pointer.flip();
 
             let coord @ (x, y) = region.exit_to(self.instruction_pointer);
-            match self.code.at(x, y) {
+            match code.at(x, y) {
                 None | Some(Color::Black) => (),
                 Some(Color::Other) => { panic!(); }
                 Some(color) => { return Some((region, coord, color)); }
@@ -357,7 +355,7 @@ impl<'a> PietRun<'a> {
         None
     }
 
-    fn walk_white(&mut self) -> Option<(Coord, Color)> {
+    fn walk_white(&mut self, code: &PietCode) -> Option<(Coord, Color)> {
         let mut seen = HashSet::new();
         let (mut x, mut y) = self.pos;
         let mut nx;
@@ -368,7 +366,7 @@ impl<'a> PietRun<'a> {
             while let Some(color) = {
                 nx = x.wrapping_add(dx);
                 ny = y.wrapping_add(dy);
-                self.code.at(nx, ny)
+                code.at(nx, ny)
             } {
                 match color {
                     Color::Black => { break; }
@@ -479,14 +477,15 @@ impl<'a> PietRun<'a> {
     }
 
     // TODO: bool sucks
-    pub fn step(&mut self) -> bool {
+    pub fn step(&mut self, code: &PietCode) -> bool {
         let (x, y) = self.pos;
-        let color = self.code.at(x, y).unwrap();
+        let color = code.at(x, y).unwrap();
+        eprintln!("{:?}", self.stack);
         match color {
             Color::White => {
-                match self.walk_white() {
+                match self.walk_white(code) {
                     Some((coord, color)) => {
-                        eprintln!("(White -> {color:?})");
+                        eprintln!("(White -> {color:?}) [{coord:?}]");
                         self.pos = coord;
                         true
                     }
@@ -494,23 +493,41 @@ impl<'a> PietRun<'a> {
                 }
             }
             Color::Color(..) => {
-                let (region, (x, y), next_color) = if let Some(v) = self.walk_color() { v }
+                let (region, coord, next_color) = if let Some(v) = self.walk_color(code) { v }
                     else { return false; };
                 let command = region.color.step_to(next_color);
                 let value = region.value();
                 eprintln!(
-                    "({:?} ({}) -> {:?}) = {command:?}",
+                    "({:?} ({}) -> {:?}) [{coord:?}] = {command:?}",
                     region.color,
                     value,
                     next_color,
                 );
                 self.run_command(command, value);
-                self.pos = (x, y);
+                self.pos = coord;
                 true
             }
             Color::Other => { panic!(); }  // TODO
             Color::Black => { panic!(); }
         }
+    }
+}
+
+pub struct PietRunner<'a> {
+    code: &'a PietCode,
+    vm: PietVM,
+}
+
+impl<'a> PietRunner<'a> {
+    fn new(code: &'a PietCode) -> Self {
+        PietRunner {
+            vm: PietVM::new(),
+            code,
+        }
+    }
+
+    pub fn step(&mut self) -> bool {
+        self.vm.step(self.code)
     }
 
     pub fn run(&mut self) {

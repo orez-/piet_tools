@@ -522,28 +522,23 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
     }
     let width = w / codel_size;
     let height = h / codel_size;
-    match img {
-        DynamicImage::ImageRgb8(img) => {
-            let code = iproduct!(0..height, 0..width)
-                .map(|(y, x)| {
-                    img.view(x * codel_size, y * codel_size, codel_size, codel_size)
-                        .pixels()
-                        .map(|(_, _, px)| px)
-                        .get_all_equal()
-                        // TODO: options to:
-                        // - error on None
-                        // - error on Other
-                        // - black on Other
-                        .map_or(Color::Other, |px| px.into())
-                })
-                .collect();
-            Ok(PietCode {
-                width: width as usize,
-                height: height as usize,
-                code
-            })
-        }
-        // DynamicImage::ImageRgba8(img) => img,
-        _ => { Err("unsupported image type".to_string()) }
-    }
+    let img = img.into_rgb8();
+    let code = iproduct!(0..height, 0..width)
+        .map(|(y, x)| {
+            img.view(x * codel_size, y * codel_size, codel_size, codel_size)
+                .pixels()
+                .map(|(_, _, px)| px)
+                .get_all_equal()
+                // TODO: options to:
+                // - error on None
+                // - error on Other
+                // - black on Other
+                .map_or(Color::Other, |px| px.into())
+        })
+        .collect();
+    Ok(PietCode {
+        width: width as usize,
+        height: height as usize,
+        code
+    })
 }

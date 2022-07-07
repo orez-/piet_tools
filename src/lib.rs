@@ -216,7 +216,7 @@ impl PietCode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Direction {
     Right,
     Down,
@@ -235,7 +235,7 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum CodelChoice { Left, Right }
 
 pub struct CodelRegion {
@@ -294,7 +294,7 @@ impl CodelRegion {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct InstructionPointer(Direction, CodelChoice);
 
 impl InstructionPointer {
@@ -360,13 +360,13 @@ impl PietVM {
 
     fn walk_white(&mut self, code: &PietCode) -> Option<(Coord, Color)> {
         let mut seen = HashSet::new();
-        let (mut x, mut y) = self.pos;
         let mut nx;
         let mut ny;
         while seen.insert((self.pos, self.instruction_pointer)) {
             let InstructionPointer(dir, _) = self.instruction_pointer;
             let (dx, dy) = dir.to_delta();
             while let Some(color) = {
+                let (x, y) = self.pos;
                 nx = x.wrapping_add(dx);
                 ny = y.wrapping_add(dy);
                 code.at(nx, ny)
@@ -374,10 +374,7 @@ impl PietVM {
                 match color {
                     Color::Black => { break; }
                     Color::Other => { panic!(); }
-                    Color::White => {
-                        x = nx;
-                        y = ny;
-                    }
+                    Color::White => { self.pos = (nx, ny); }
                     color => { return Some(((nx, ny), color)); }
                 }
             }
@@ -584,5 +581,13 @@ mod tests {
         let mut vm = PietVM { stack: to_stack(&[4, 5, 6, 7, 8, 9, 3, 2]), ..Default::default() };
         vm.run_command(Command::Roll, BigInt::zero());
         assert_eq!(vm.stack, to_stack(&[4, 5, 6, 8, 9, 7]));
+    }
+
+    #[test]
+    fn test_slide() {
+        let code = load("test_imgs/test_slide.png", 1).unwrap();
+        let mut runner = code.execute();
+        runner.run();
+        assert_eq!(runner.vm.stack, to_stack(&[5]));
     }
 }

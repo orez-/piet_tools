@@ -378,6 +378,7 @@ impl PietVM {
                     color => { return Some(((nx, ny), color)); }
                 }
             }
+            self.instruction_pointer.flip();
             self.instruction_pointer.rotate();
         }
         None
@@ -583,11 +584,12 @@ mod tests {
         assert_eq!(vm.stack, to_stack(&[4, 5, 6, 8, 9, 7]));
     }
 
+    /// Exercises sliding, slide cycle detection, and slide CC maintenance
     #[test]
     fn test_slide() {
         let code = load("test_imgs/test_slide.png", 1).unwrap();
         let mut runner = code.execute();
         runner.run();
-        assert_eq!(runner.vm.stack, to_stack(&[5]));
+        assert_eq!(runner.vm.stack, to_stack(&[8]));
     }
 }

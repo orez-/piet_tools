@@ -3,8 +3,10 @@ use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use image::{self, DynamicImage, GenericImageView, Rgb, Rgba};
 use itertools::iproduct;
+use num_bigint::BigInt;
 use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
+use num_integer::Integer;
+use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
 
 pub trait GetAllEqualIterator<T>: Iterator<Item = T> {
     fn get_all_equal(&mut self) -> Option<T>
@@ -19,7 +21,6 @@ pub trait GetAllEqualIterator<T>: Iterator<Item = T> {
 impl<T, I: Iterator<Item = T>> GetAllEqualIterator<T> for I {}
 
 type Coord = (usize, usize);
-type PietInt = i128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Hue {
@@ -239,8 +240,8 @@ impl CodelRegion {
         }
     }
 
-    fn value(&self) -> PietInt {
-        self.region.len() as PietInt
+    fn value(&self) -> BigInt {
+        BigInt::from(self.region.len())
     }
 
     fn exit_to(&self, ip: InstructionPointer) -> Coord {
@@ -307,7 +308,7 @@ pub struct PietRun<'a> {
     instruction_pointer: InstructionPointer,
     region: CodelRegion,
     code: &'a PietCode,
-    stack: Vec<PietInt>,
+    stack: Vec<BigInt>,
 }
 
 impl<'a> PietRun<'a> {
@@ -337,7 +338,7 @@ impl<'a> PietRun<'a> {
         None
     }
 
-    fn pop2(&mut self) -> Option<(PietInt, PietInt)> {
+    fn pop2(&mut self) -> Option<(BigInt, BigInt)> {
         if self.stack.len() < 2 {
             return None;
         }
@@ -367,41 +368,43 @@ impl<'a> PietRun<'a> {
             }
             Command::Divide => {
                 let (a, b) = self.pop2()?;
-                self.stack.push(a.div_euclid(b));
+                self.stack.push(a.div_floor(&b));
             }
             Command::Mod => {
                 let (a, b) = self.pop2()?;
-                self.stack.push(a.rem_euclid(b));
+                self.stack.push(a.mod_floor(&b));
             }
             Command::Not => {
                 let num = self.stack.pop()?;
-                self.stack.push(if num == 0 { 1 } else { 0 });
+                let zero = BigInt::zero();
+                self.stack.push(if num == zero { BigInt::one() } else { zero });
             }
             Command::Greater => {
                 let (a, b) = self.pop2()?;
-                self.stack.push(if a > b { 1 } else { 0 });
+                self.stack.push(if a > b { BigInt::one() } else { BigInt::zero() });
             }
             Command::Pointer => {
                 let spin = self.stack.pop()?;
-                for _ in 0..spin.rem_euclid(4) {
+                let spin = spin.mod_floor(&(4.into())).to_u8().unwrap();
+                for _ in 0..spin {
                     self.instruction_pointer.rotate();
                 }
             }
             Command::Switch => {
                 let swap = self.stack.pop()?;
-                if swap % 2 != 0 {
+                if swap % 2 != BigInt::zero() {
                     self.instruction_pointer.flip();
                 }
             }
             Command::Duplicate => {
-                let top = *self.stack.last()?;
+                let top = self.stack.last()?.clone();
                 self.stack.push(top);
             }
             Command::Roll => {
                 let (dive, roll) = self.pop2()?;
-                if dive < 0 { panic!(); }  // TODO: exit without popping
-                let dive = dive as usize;
-                let roll = (roll as usize).div_euclid(dive);
+                if dive < BigInt::zero() { panic!(); }  // TODO: exit without popping
+                let roll = roll.div_floor(&dive).to_usize().unwrap();
+                let dive = dive.to_usize().unwrap();
                 let start = self.stack.len() - dive;
                 self.stack[start..].rotate_right(roll);
             }
@@ -413,7 +416,7 @@ impl<'a> PietRun<'a> {
             }
             Command::OutChar => {
                 let num = self.stack.pop()?;
-                let chr = num as u8 as char;  // TODO: 👀
+                let chr = num.to_u8().unwrap() as char;  // TODO: 👀
                 print!("{chr}");
             }
         }

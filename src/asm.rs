@@ -184,10 +184,16 @@ fn validate_arg_count(count: usize, min: usize, max: Option<usize>) -> Result<()
     Err(ParseErrorType::WrongArgumentCount(count, min, max))
 }
 
+/// Prep the pasm file for processing.
+/// This will:
+/// - Annotate lines with their line numbers
+/// - Strip comments + blank lines
+/// - Expand macros
+/// - Convert the code into an AST
 fn preprocess(lines: &[String]) -> Result<Vec<Line>, ParseError> {
     let mut lines = lines.iter().enumerate().filter_map(|(lineno, line)| {
         let lineno = lineno + 1;
-        let line = line.trim().split('#').next().unwrap();
+        let line = line.split('#').next().unwrap().trim();
         (!line.is_empty()).then(|| (lineno, line))
     });
     let mut command_stack = Vec::new();

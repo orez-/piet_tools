@@ -23,6 +23,7 @@ enum AsmCommand {
     OutNum,
     OutChar,
     // --
+    Label(String),
     Jump(String),
     JumpIf(String),
 }
@@ -375,6 +376,7 @@ fn parse_line<'a>(line: Line, c: &'a mut ParseContext) -> Result<(), ParseErrorT
                 return Err(ParseErrorType::DuplicateLabel(label.to_string()));
             }
             c.missing_labels.remove(label);
+            c.cmds.push(AsmCommand::Label(label.to_string()));
         }
     }
     Ok(())

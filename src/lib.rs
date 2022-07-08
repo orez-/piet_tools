@@ -1,4 +1,4 @@
-use image::{self, DynamicImage, GenericImageView, Rgb, Rgba};
+use image::{self, DynamicImage, GenericImageView, ImageResult, Rgb, Rgba, RgbImage};
 use itertools::iproduct;
 use num_bigint::BigInt;
 use num_derive::FromPrimitive;
@@ -173,6 +173,36 @@ impl From<Rgb<u8>> for Color {
     }
 }
 
+impl TryFrom<Color> for Rgb<u8> {
+    type Error = ();
+
+    fn try_from(pixel: Color) -> Result<Rgb<u8>, ()> {
+        Ok(match pixel {
+            Color::White => Rgb([0xFF, 0xFF, 0xFF]),
+            Color::Black => Rgb([0x00, 0x00, 0x00]),
+            Color::LightRed => Rgb([0xFF, 0xC0, 0xC0]),
+            Color::Red => Rgb([0xFF, 0x00, 0x00]),
+            Color::DarkRed => Rgb([0xC0, 0x00, 0x00]),
+            Color::LightYellow => Rgb([0xFF, 0xFF, 0xC0]),
+            Color::Yellow => Rgb([0xFF, 0xFF, 0x00]),
+            Color::DarkYellow => Rgb([0xC0, 0xC0, 0x00]),
+            Color::LightGreen => Rgb([0xC0, 0xFF, 0xC0]),
+            Color::Green => Rgb([0x00, 0xFF, 0x00]),
+            Color::DarkGreen => Rgb([0x00, 0xC0, 0x00]),
+            Color::LightCyan => Rgb([0xC0, 0xFF, 0xFF]),
+            Color::Cyan => Rgb([0x00, 0xFF, 0xFF]),
+            Color::DarkCyan => Rgb([0x00, 0xC0, 0xC0]),
+            Color::LightBlue => Rgb([0xC0, 0xC0, 0xFF]),
+            Color::Blue => Rgb([0x00, 0x00, 0xFF]),
+            Color::DarkBlue => Rgb([0x00, 0x00, 0xC0]),
+            Color::LightMagenta => Rgb([0xFF, 0xC0, 0xFF]),
+            Color::Magenta => Rgb([0xFF, 0x00, 0xFF]),
+            Color::DarkMagenta => Rgb([0xC0, 0x00, 0xC0]),
+            Color::Other => { return Err(()); }
+        })
+    }
+}
+
 impl From<Rgba<u8>> for Color {
     fn from(pixel: Rgba<u8>) -> Color {
         let Rgba([r, g, b, a]) = pixel;
@@ -191,6 +221,14 @@ pub struct PietCode {
 }
 
 impl PietCode {
+    fn codels(&self) -> impl Iterator<Item = (usize, usize, Color)> + '_ {
+        self.code.iter().enumerate().map(|(i, c)| {
+            let x = i % self.width;
+            let y = i / self.width;
+            (x, y, *c)
+        })
+    }
+
     fn at(&self, x: usize, y: usize) -> Option<Color> {
         if x >= self.width || y >= self.height { return None; }
         Some(self.code[x + y * self.width])
@@ -537,6 +575,11 @@ pub fn load(filename: &str, codel_size: u32) -> Result<PietCode, String> {
     to_codels(img, codel_size)
 }
 
+pub fn save(code: PietCode, filename: &str, codel_size: u32) -> ImageResult<()> {
+    let img = to_image(code, codel_size);
+    img.save(filename)
+}
+
 fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
     let (w, h) = img.dimensions();
     if w % codel_size != 0 || h % codel_size != 0 {
@@ -563,6 +606,29 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
         height: height as usize,
         code,
     })
+}
+
+fn to_image(code: PietCode, codel_size: u32) -> RgbImage {
+    // TODO: options to handle Other pixels.
+    // Currently hardcoded to a nice purple
+    const OTHER_COLOR: Rgb<u8> = Rgb([0x73, 0x26, 0xb1]);
+    let PietCode { width, height, .. } = code;
+    let mut img = RgbImage::new(
+        width as u32 * codel_size,
+        height as u32 * codel_size,
+    );
+    for (x, y, codel) in code.codels() {
+        let img_x = x as u32 * codel_size;
+        let img_y = y as u32 * codel_size;
+        let color = codel.try_into().unwrap_or(OTHER_COLOR);
+
+        for dx in 0..codel_size {
+            for dy in 0..codel_size {
+                img.put_pixel(img_x + dx, img_y + dy, color);
+            }
+        }
+    }
+    img
 }
 
 #[cfg(test)]

@@ -191,14 +191,14 @@ fn validate_arg_count(count: usize, min: usize, max: Option<usize>) -> Result<()
 /// - Expand macros
 /// - Convert the code into an AST
 fn preprocess(lines: &[String]) -> Result<Vec<Line>, ParseError> {
-    let mut lines = lines.iter().enumerate().filter_map(|(lineno, line)| {
+    let lines = lines.iter().enumerate().filter_map(|(lineno, line)| {
         let lineno = lineno + 1;
         let line = line.split('#').next().unwrap().trim();
         (!line.is_empty()).then(|| (lineno, line))
     });
     let mut command_stack = Vec::new();
     let mut commands = Vec::new();
-    while let Some((lineno, line)) = lines.next() {
+    for (lineno, line) in lines {
         let pp_token = preprocess_line(line, lineno).map_err(|e| e.at(lineno))?;
         match pp_token {
             PreprocToken::Line(cmd) => { commands.push(cmd); }
@@ -208,7 +208,7 @@ fn preprocess(lines: &[String]) -> Result<Vec<Line>, ParseError> {
             }
             PreprocToken::End => {
                 let (name, terms, mut restored_cmds, _) = command_stack.pop()
-                    .ok_or(ParseErrorType::ExtraEnd.at(lineno))?;
+                    .ok_or_else(|| ParseErrorType::ExtraEnd.at(lineno))?;
                 for term in terms {
                     let ccmds = commands.clone();
                     for mut cmd in ccmds {
@@ -232,7 +232,7 @@ enum PreprocToken<'a> {
     End,
 }
 
-fn preprocess_line<'a>(line: &'a str, lineno: usize) -> Result<PreprocToken<'a>, ParseErrorType> {
+fn preprocess_line(line: &str, lineno: usize) -> Result<PreprocToken<'_>, ParseErrorType> {
     if let Some(line) = line.strip_prefix('@') {
         let (cmd, rest) = line
             .split_once(|c: char| c.is_ascii_whitespace())
@@ -294,7 +294,7 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
     }
     if let Some((label, lineno)) = context.missing_labels.into_iter().next() {
         // TODO: only grabs one here, not great.
-        return Err(ParseErrorType::MissingLabel(label.to_string()).at(lineno));
+        return Err(ParseErrorType::MissingLabel(label).at(lineno));
     }
     let ParseContext { cmds, .. } = context;
     for cmd in &cmds {
@@ -303,7 +303,7 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
     Ok(PietAsm { cmds })
 }
 
-fn parse_line<'a>(line: Line, c: &'a mut ParseContext) -> Result<(), ParseErrorType> {
+fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
     use Statement::Cmd;
 
     let lineno = line.lineno;

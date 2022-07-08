@@ -29,6 +29,7 @@ enum AsmCommand {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PietAsm {
     cmds: Vec<AsmCommand>
 }
@@ -47,16 +48,6 @@ fn parse_identifier(s: &str) -> Result<&str, ParseErrorType> {
 
 fn parse_integer(s: &str) -> Result<BigInt, ParseErrorType> {
     s.parse().map_err(|_| { ParseErrorType::ExpectedInteger(s.to_string()) })
-}
-
-fn parse_int_arg(s: &str, lookup: &HashMap<String, BigInt>) -> Result<BigInt, ParseErrorType> {
-    if let Some(arg) = s.strip_prefix("@") {
-        let arg = parse_identifier(arg)?;
-        let num = lookup.get(arg)
-            .ok_or_else(|| ParseErrorType::UndefinedVarError(arg.to_string()))?;
-        return Ok(num.clone());
-    }
-    parse_integer(s)
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +83,31 @@ impl TryFrom<&str> for Token {
     }
 }
 
+impl TryFrom<Token> for BigInt {
+    type Error = ParseErrorType;
+
+    fn try_from(token: Token) -> Result<BigInt, ParseErrorType> {
+        match token {
+            Token::Var(var) => Err(ParseErrorType::UnboundVarError(var)),
+            Token::Num(int) => Ok(int),
+            Token::Label(_) => Err(ParseErrorType::TypeError),
+        }
+    }
+}
+
+// TODO: this super sucks. Make a dedicated Label type
+impl TryFrom<Token> for String {
+    type Error = ParseErrorType;
+
+    fn try_from(token: Token) -> Result<String, ParseErrorType> {
+        match token {
+            Token::Var(var) => Err(ParseErrorType::UnboundVarError(var)),
+            Token::Num(_) => Err(ParseErrorType::TypeError),
+            Token::Label(label) => Ok(label),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Line<'a> {
     lineno: usize,
@@ -124,6 +140,7 @@ impl Statement<'_> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct ParseError {
     lineno: usize,
     error_type: ParseErrorType,
@@ -138,10 +155,11 @@ enum ParseErrorType {
     ExpectedInteger(String),
     MissingLabel(String),
     DuplicateLabel(String),
-    UndefinedVarError(String),
+    UnboundVarError(String),
     InvalidPragma(String),
     MissingEnd,
     ExtraEnd,
+    TypeError,  // TODO: any metadata.
 }
 
 impl ParseErrorType {
@@ -151,6 +169,12 @@ impl ParseErrorType {
             error_type: self,
         }
     }
+}
+
+fn validate_args<T>(args: Vec<Token>, min: usize, max: Option<usize>) -> Result<Vec<T>, ParseErrorType>
+where T: TryFrom<Token, Error = ParseErrorType> {
+    validate_arg_count(args.len(), min, max)?;
+    args.into_iter().map(|t| t.try_into()).collect()
 }
 
 fn validate_arg_count(count: usize, min: usize, max: Option<usize>) -> Result<(), ParseErrorType> {
@@ -249,38 +273,42 @@ fn preprocess_line<'a>(line: &'a str, lineno: usize) -> Result<PreprocToken<'a>,
 
 #[derive(Default)]
 struct ParseContext {
-    args: HashMap<String, BigInt>,
+    cmds: Vec<AsmCommand>,
     labels: HashMap<String, usize>,
     missing_labels: HashMap<String, usize>,
 }
 
 fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
     let lines = preprocess(lines)?;
+    let mut context = ParseContext::default();
     for line in lines {
-        println!("{line:?}");
+        let lineno = line.lineno;
+        parse_line(line, &mut context)
+            .map_err(|e| e.at(lineno))?;
     }
-    todo!();
+    if let Some((label, lineno)) = context.missing_labels.into_iter().next() {
+        // TODO: only grabs one here, not great.
+        return Err(ParseErrorType::MissingLabel(label.to_string()).at(lineno));
+    }
+    let ParseContext { cmds, .. } = context;
+    Ok(PietAsm { cmds })
 }
 
-fn parse_line<'a>(line: &'a str, lineno: usize, c: &'a mut ParseContext) -> Result<(), ParseErrorType> {
-    let mut cmds = Vec::new();
-    let mut terms = line.split_ascii_whitespace();
-    let cmd = terms.next().unwrap();
-    match cmd {
-        "PUSH" => {
-            let args: Result<Vec<_>, _> = terms
-                .map(|a| parse_int_arg(a, &c.args))
-                .collect();
-            let args = args?;
-            validate_arg_count(args.len(), 1, None)?;
+fn parse_line<'a>(line: Line, c: &'a mut ParseContext) -> Result<(), ParseErrorType> {
+    use Statement::Cmd;
+
+    let lineno = line.lineno;
+
+    match line.stmt {
+        Cmd { cmd: "PUSH", args } => {
+            let args = validate_args(args, 1, None)?;
             for arg in args {
-                cmds.push(AsmCommand::Push(arg));
+                c.cmds.push(AsmCommand::Push(arg));
             }
         }
-        "POP" | "DUP" | "INNUM" | "INCHAR" => {
-            let args: Vec<_> = terms.collect();
+        Cmd { cmd: cmd @ ("POP" | "DUP" | "INNUM" | "INCHAR"), args } => {
             validate_arg_count(args.len(), 0, Some(0))?;
-            cmds.push(match cmd {
+            c.cmds.push(match cmd {
                 "POP" => AsmCommand::Pop,
                 "DUP" => AsmCommand::Duplicate,
                 "INNUM" => AsmCommand::InNum,
@@ -288,28 +316,24 @@ fn parse_line<'a>(line: &'a str, lineno: usize, c: &'a mut ParseContext) -> Resu
                 _ => unreachable!(),
             });
         }
-        "NOT" | "OUTNUM" | "OUTCHAR" => {
-            let args: Result<Vec<_>, _> = terms.map(|a| parse_int_arg(a, &c.args)).collect();
-            let args = args?;
-            validate_arg_count(args.len(), 0, Some(1))?;
+        Cmd { cmd: cmd @ ("NOT" | "OUTNUM" | "OUTCHAR"), args } => {
+            let args = validate_args(args, 0, Some(1))?;
             for arg in args {
-                cmds.push(AsmCommand::Push(arg));
+                c.cmds.push(AsmCommand::Push(arg));
             }
-            cmds.push(match cmd {
+            c.cmds.push(match cmd {
                 "NOT" => AsmCommand::Not,
                 "OUTNUM" => AsmCommand::OutNum,
                 "OUTCHAR" => AsmCommand::OutChar,
                 _ => unreachable!(),
             });
         }
-        "ADD" | "SUB" | "MUL" | "DIV" | "MOD" | "GREATER" | "ROLL" => {
-            let args: Result<Vec<_>, _> = terms.map(|a| parse_int_arg(a, &c.args)).collect();
-            let args = args?;
-            validate_arg_count(args.len(), 0, Some(2))?;
+        Cmd { cmd: cmd @ ("ADD" | "SUB" | "MUL" | "DIV" | "MOD" | "GREATER" | "ROLL"), args } => {
+            let args = validate_args(args, 0, Some(2))?;
             for arg in args {
-                cmds.push(AsmCommand::Push(arg));
+                c.cmds.push(AsmCommand::Push(arg));
             }
-            cmds.push(match cmd {
+            c.cmds.push(match cmd {
                 "ADD" => AsmCommand::Add,
                 "SUB" => AsmCommand::Subtract,
                 "MUL" => AsmCommand::Multiply,
@@ -320,19 +344,18 @@ fn parse_line<'a>(line: &'a str, lineno: usize, c: &'a mut ParseContext) -> Resu
                 _ => unreachable!(),
             });
         }
-        "JUMP" | "JUMPIF" => {
-            let args: Result<Vec<_>, _> = terms.map(parse_identifier).collect();
-            let args = args?;
-            validate_arg_count(args.len(), 1, Some(1))?;
-            let label = args[0];
-            if !c.labels.contains_key(label) {
-                c.missing_labels.entry(label.to_string()).or_insert(lineno);
+        Cmd { cmd: "JUMP" | "JUMPIF", args } => {
+            let mut labels: Vec<String> = validate_args(args, 1, Some(1))?;
+            let label = labels.pop().unwrap();
+            if !c.labels.contains_key(&label) {
+                c.missing_labels.entry(label).or_insert(lineno);
             }
         }
-        cmd => {
+        Cmd { cmd, .. } => {
             let cmd = cmd.to_string();
             return Err(ParseErrorType::UnrecognizedCommand(cmd));
         }
+        Statement::Label(_) => todo!()
     }
     Ok(())
 }

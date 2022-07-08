@@ -1,20 +1,21 @@
-use std::cmp::Reverse;
-use std::collections::{HashSet, VecDeque};
-use std::fmt;
-use std::hash::Hash;
 use image::{self, DynamicImage, GenericImageView, Rgb, Rgba};
 use itertools::iproduct;
 use num_bigint::BigInt;
 use num_derive::FromPrimitive;
 use num_integer::Integer;
 use num_traits::{FromPrimitive, One, ToPrimitive, Zero};
+use std::cmp::Reverse;
+use std::collections::{HashSet, VecDeque};
+use std::fmt;
+use std::hash::Hash;
 
 pub mod asm;
 
 pub trait GetAllEqualIterator<T>: Iterator<Item = T> {
     fn get_all_equal(&mut self) -> Option<T>
-        where Self: Sized,
-              Self::Item: PartialEq
+    where
+        Self: Sized,
+        Self::Item: PartialEq,
     {
         let a = self.next()?;
         self.all(|x| a == x).then(|| a)
@@ -83,7 +84,7 @@ impl Color {
             Color::Other => { panic!(); }
         };
         let (next_hue, next_lightness) = match next {
-            Color::Color(h, l) => { (h, l) }
+            Color::Color(h, l) => (h, l),
             Color::White => { return Command::Noop; }
             Color::Black => { panic!(); }
             Color::Other => { panic!(); }
@@ -167,7 +168,7 @@ impl From<Rgb<u8>> for Color {
             Rgb([0xFF, 0xC0, 0xFF]) => Color::LightMagenta,
             Rgb([0xFF, 0x00, 0xFF]) => Color::Magenta,
             Rgb([0xC0, 0x00, 0xC0]) => Color::DarkMagenta,
-            _ => Color::Other
+            _ => Color::Other,
         }
     }
 }
@@ -247,10 +248,7 @@ pub struct CodelRegion {
 
 impl CodelRegion {
     fn new(region: HashSet<Coord>, color: Color) -> Self {
-        CodelRegion {
-            color,
-            region,
-        }
+        CodelRegion { color, region }
     }
 
     fn value(&self) -> BigInt {
@@ -472,7 +470,7 @@ impl PietVM {
             }
             Command::OutChar => {
                 let num = self.stack.pop()?;
-                let chr = num.to_u8().unwrap() as char;  // TODO: 👀
+                let chr = num.to_u8().unwrap() as char; // TODO: 👀
                 print!("{chr}");
             }
         }
@@ -485,16 +483,14 @@ impl PietVM {
         let color = code.at(x, y).unwrap();
         eprintln!("{:?}", self.stack);
         match color {
-            Color::White => {
-                match self.walk_white(code) {
-                    Some((coord, color)) => {
-                        eprintln!("(White -> {color:?}) [{coord:?}]");
-                        self.pos = coord;
-                        true
-                    }
-                    None => false,
+            Color::White => match self.walk_white(code) {
+                Some((coord, color)) => {
+                    eprintln!("(White -> {color:?}) [{coord:?}]");
+                    self.pos = coord;
+                    true
                 }
-            }
+                None => false,
+            },
             Color::Color(..) => {
                 let (region, coord, next_color) = if let Some(v) = self.walk_color(code) { v }
                     else { return false; };
@@ -502,9 +498,7 @@ impl PietVM {
                 let value = region.value();
                 eprintln!(
                     "({:?} ({}) -> {:?}) [{coord:?}] = {command:?}",
-                    region.color,
-                    value,
-                    next_color,
+                    region.color, value, next_color,
                 );
                 self.run_command(command, value);
                 self.pos = coord;
@@ -538,7 +532,7 @@ impl<'a> PietRunner<'a> {
     }
 }
 
-pub fn load(filename: &str, codel_size: u32) -> Result<PietCode, String>  {
+pub fn load(filename: &str, codel_size: u32) -> Result<PietCode, String> {
     let img = image::open(filename).map_err(|e| e.to_string())?;
     to_codels(img, codel_size)
 }
@@ -567,7 +561,7 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
     Ok(PietCode {
         width: width as usize,
         height: height as usize,
-        code
+        code,
     })
 }
 

@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-use crate::asm::{AsmCommand, ParseError, ParseErrorType, PietAsm};
 use crate::asm::preprocessor::{Line, Statement, Token};
-
+use crate::asm::{AsmCommand, ParseError, ParseErrorType, PietAsm};
+use std::collections::HashMap;
 
 #[derive(Default)]
 struct ParseContext {
@@ -14,8 +13,7 @@ pub(super) fn to_bytecode(ast: Vec<Line>) -> Result<PietAsm, ParseError> {
     let mut context = ParseContext::default();
     for line in ast {
         let lineno = line.lineno;
-        parse_line(line, &mut context)
-            .map_err(|e| e.at(lineno))?;
+        parse_line(line, &mut context).map_err(|e| e.at(lineno))?;
     }
     if let Some((label, lineno)) = context.missing_labels.into_iter().next() {
         // TODO: only grabs one here, not great.

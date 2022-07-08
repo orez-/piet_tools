@@ -1,5 +1,5 @@
-use num_bigint::BigInt;
 use crate::asm::{ParseError, ParseErrorType};
+use num_bigint::BigInt;
 
 enum PreprocToken<'a> {
     Line(Line<'a>),
@@ -139,12 +139,10 @@ impl TryFrom<&str> for Token {
     fn try_from(arg: &str) -> Result<Self, ParseErrorType> {
         Ok(match arg.strip_prefix('@') {
             Some(name) => Token::Var(name.to_string()),
-            None => {
-                match arg.parse() {
-                    Ok(int) => Token::Num(int),
-                    Err(_) => Token::Label(parse_identifier(arg)?.to_string()),
-                }
-            }
+            None => match arg.parse() {
+                Ok(int) => Token::Num(int),
+                Err(_) => Token::Label(parse_identifier(arg)?.to_string()),
+            },
         })
     }
 }

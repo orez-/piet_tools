@@ -2,9 +2,9 @@ use num_bigint::BigInt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-mod preprocessor;
-mod parser;
 mod optimizer;
+mod parser;
+mod preprocessor;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum AsmCommand {
@@ -34,7 +34,7 @@ enum AsmCommand {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PietAsm {
-    cmds: Vec<AsmCommand>
+    cmds: Vec<AsmCommand>,
 }
 
 #[derive(Debug)]
@@ -57,7 +57,7 @@ enum ParseErrorType {
     InvalidPragma(String),
     MissingEnd,
     ExtraEnd,
-    TypeError,  // TODO: any metadata.
+    TypeError, // TODO: any metadata.
 }
 
 impl ParseErrorType {

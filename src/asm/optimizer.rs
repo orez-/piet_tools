@@ -24,7 +24,7 @@ pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
             .rposition(|w| matches!(w[0], Push(_)) && w[0] == w[1])
         {
             asm.cmds[idx + 1] = Duplicate;
-            continue 'progress
+            continue 'progress;
         }
 
         // Run through all the constant patterns

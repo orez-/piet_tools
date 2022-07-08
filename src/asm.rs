@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum AsmCommand {
     Push(BigInt),
@@ -297,6 +296,9 @@ fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
         return Err(ParseErrorType::MissingLabel(label.to_string()).at(lineno));
     }
     let ParseContext { cmds, .. } = context;
+    for cmd in &cmds {
+        println!("{cmd:?}");
+    }
     Ok(PietAsm { cmds })
 }
 
@@ -350,12 +352,17 @@ fn parse_line<'a>(line: Line, c: &'a mut ParseContext) -> Result<(), ParseErrorT
                 _ => unreachable!(),
             });
         }
-        Cmd { cmd: "JUMP" | "JUMPIF", args } => {
+        Cmd { cmd: cmd @ ("JUMP" | "JUMPIF"), args } => {
             let mut labels: Vec<String> = validate_args(args, 1, Some(1))?;
             let label = labels.pop().unwrap();
             if !c.labels.contains_key(&label) {
-                c.missing_labels.entry(label).or_insert(lineno);
+                c.missing_labels.entry(label.clone()).or_insert(lineno);
             }
+            c.cmds.push(match cmd {
+                "JUMP" => AsmCommand::Jump(label),
+                "JUMPIF" => AsmCommand::JumpIf(label),
+                _ => unreachable!(),
+            });
         }
         Cmd { cmd, .. } => {
             let cmd = cmd.to_string();

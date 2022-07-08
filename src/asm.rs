@@ -355,7 +355,14 @@ fn parse_line<'a>(line: Line, c: &'a mut ParseContext) -> Result<(), ParseErrorT
             let cmd = cmd.to_string();
             return Err(ParseErrorType::UnrecognizedCommand(cmd));
         }
-        Statement::Label(_) => todo!()
+        Statement::Label(label) => {
+            // XXX: i _believe_ we already ran `parse_identifier`,
+            // but it'd sure be nice if that were enforced by the type system.
+            if c.labels.insert(label.to_string(), lineno).is_some() {
+                return Err(ParseErrorType::DuplicateLabel(label.to_string()));
+            }
+            c.missing_labels.remove(label);
+        }
     }
     Ok(())
 }

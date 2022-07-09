@@ -7,7 +7,7 @@ fn main() -> Result<(), String> {
         _ => { return Err("usage: pieti filename".to_string()); },
     };
 
-    let piet = piet_tools::load(filename, 5)?;
+    let piet = piet_tools::load(filename, 10)?;
     piet.execute().run();
     println!();
     Ok(())

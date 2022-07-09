@@ -1,7 +1,9 @@
+use crate::{Command, PietCode};
 use num_bigint::BigInt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+mod generator;
 mod optimizer;
 mod parser;
 mod preprocessor;
@@ -29,6 +31,31 @@ enum AsmCommand {
     Label(String),
     Jump(String),
     JumpIf(String),
+}
+
+impl TryFrom<AsmCommand> for Command {
+    type Error = ();
+
+    fn try_from(cmd: AsmCommand) -> Result<Self, ()> {
+        Ok(match cmd {
+            AsmCommand::Push(_) => Command::Push,
+            AsmCommand::Pop => Command::Pop,
+            AsmCommand::Add => Command::Add,
+            AsmCommand::Subtract => Command::Subtract,
+            AsmCommand::Multiply => Command::Multiply,
+            AsmCommand::Divide => Command::Divide,
+            AsmCommand::Mod => Command::Mod,
+            AsmCommand::Not => Command::Not,
+            AsmCommand::Greater => Command::Greater,
+            AsmCommand::Duplicate => Command::Duplicate,
+            AsmCommand::Roll => Command::Roll,
+            AsmCommand::InNum => Command::InNum,
+            AsmCommand::InChar => Command::InChar,
+            AsmCommand::OutNum => Command::OutNum,
+            AsmCommand::OutChar => Command::OutChar,
+            _ => { return Err(()); }
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -69,14 +96,16 @@ impl ParseErrorType {
     }
 }
 
-fn parse(lines: &[String]) -> Result<PietAsm, ParseError> {
+fn parse(lines: &[String]) -> Result<PietCode, ParseError> {
     let ast = preprocessor::preprocess(lines)?;
     let asm = parser::to_bytecode(ast)?;
     let asm = optimizer::optimize(asm);
-    Ok(asm)
+    let asm = optimizer::sanitize(asm);
+    let img = generator::generate(asm);
+    Ok(img)
 }
 
-pub fn load(filename: &str) -> Result<PietAsm, String> {
+pub fn load(filename: &str) -> Result<PietCode, String> {
     let file = File::open(filename).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
     let lines: Result<Vec<_>, _> = reader.lines().collect();

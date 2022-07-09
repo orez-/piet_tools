@@ -1,21 +1,24 @@
 use crate::asm::{AsmCommand, PietAsm};
+use num_bigint::BigInt;
+use num_traits::{ToPrimitive, One, Zero};
+
+fn push(val: i32) -> AsmCommand {
+    AsmCommand::Push(val.into())
+}
 
 pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
     use AsmCommand::*;
 
-    fn push(val: i32) -> AsmCommand {
-        Push(val.into())
-    }
-
     // TODO: [dyad, POP] => [POP, POP]
     // let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); _] = [
-    let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); 0] = [
+    let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); 1] = [
         // XXX: these are all predicated on there being something on the stack!
         // (vec![push(1), Multiply], Vec::new()),
         // (vec![push(1), Divide], Vec::new()),
         // // push(0) needs to get replaced later anyway,
         // // so if we've got a pop handy, instead
         // (vec![Pop, push(0)], vec![push(1), Mod]),
+        (vec![Not, Not, Not], vec![Not]),
     ];
     'progress: while {
         // [PUSH T, PUSH T] => [PUSH T, DUPLICATE]
@@ -44,14 +47,29 @@ pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
     asm
 }
 
+pub(super) fn sanitize(mut asm: PietAsm) -> PietAsm {
+    use AsmCommand::*;
+
+    while let Some((idx, num)) = {
+        asm.cmds.iter().enumerate().filter_map(|(i, e)| match e {
+            Push(n) if n <= &BigInt::zero() => Some((i, n)),
+            _ => None,
+        }).next()
+    }
+    {
+        let replace = match num.to_u32() {
+            Some(0) => vec![push(1), Not],
+            _ => vec![push(1), Push(num + BigInt::one()), Subtract],
+        };
+        asm.cmds.splice(idx..idx + 1, replace);
+    }
+    asm
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::asm::AsmCommand::*;
-
-    fn push(val: i32) -> AsmCommand {
-        Push(val.into())
-    }
 
     #[test]
     fn test_dup_pushes() {

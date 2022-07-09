@@ -27,6 +27,7 @@ impl<T, I: Iterator<Item = T>> GetAllEqualIterator<T> for I {}
 type Coord = (usize, usize);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(FromPrimitive)]
 enum Hue {
     Red = 0,
     Yellow = 1,
@@ -37,6 +38,7 @@ enum Hue {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(FromPrimitive)]
 enum Lightness {
     Light = 0,
     Normal = 1,
@@ -92,6 +94,20 @@ impl Color {
         let hue_step = (next_hue as i32 - hue as i32).rem_euclid(6);
         let light_step = (next_lightness as i32 - lightness as i32).rem_euclid(3);
         FromPrimitive::from_i32(light_step + hue_step * 3).unwrap()
+    }
+
+    /// Reverse of `step_to`.
+    fn next_for_command(self, command: Command) -> Color {
+        let (hue, lightness) = match self {
+            Color::Color(h, l) => (h as i32, l as i32),
+            _ => { panic!(); }
+        };
+        let command = command as i32;
+        let dlight = command % 3;
+        let dhue = command / 3;
+        let hue = FromPrimitive::from_i32((hue + dhue) % 6).unwrap();
+        let lightness = FromPrimitive::from_i32((lightness + dlight) % 3).unwrap();
+        Color::Color(hue, lightness)
     }
 }
 

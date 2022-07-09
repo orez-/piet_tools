@@ -20,9 +20,6 @@ pub(super) fn to_bytecode(ast: Vec<Line>) -> Result<PietAsm, ParseError> {
         return Err(ParseErrorType::MissingLabel(label).at(lineno));
     }
     let ParseContext { cmds, .. } = context;
-    for cmd in &cmds {
-        println!("{cmd:?}");
-    }
     Ok(PietAsm { cmds })
 }
 
@@ -82,11 +79,15 @@ fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
             if !c.labels.contains_key(&label) {
                 c.missing_labels.entry(label.clone()).or_insert(lineno);
             }
-            c.cmds.push(match cmd {
-                "JUMP" => AsmCommand::Jump(label),
-                "JUMPIF" => AsmCommand::JumpIf(label),
+            match cmd {
+                "JUMP" => { c.cmds.push(AsmCommand::Jump(label)); }
+                "JUMPIF" => {
+                    c.cmds.push(AsmCommand::Not);
+                    c.cmds.push(AsmCommand::Not);
+                    c.cmds.push(AsmCommand::JumpIf(label));
+                }
                 _ => unreachable!(),
-            });
+            }
         }
         Cmd { cmd, .. } => {
             let cmd = cmd.to_string();

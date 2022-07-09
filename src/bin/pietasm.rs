@@ -8,6 +8,9 @@ fn main() -> Result<(), String> {
     };
 
     let piet = piet_tools::asm::load(filename)?;
-    println!("{piet:?}");
+    let out_filename = format!("{filename}.png");
+    piet_tools::save(piet, &out_filename, 10)
+        .map_err(|e| e.to_string())?;
+    println!("File saved to {out_filename}");
     Ok(())
 }

@@ -1,12 +1,12 @@
 use crate::asm::{AsmCommand, PietAsm};
-use crate::{Color, Command, InstructionPointer, PietCode};
+use crate::{Color, Command, PietCode};
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::iter::repeat;
 use std::mem::ManuallyDrop;
 
-const WIDTH: usize = 800;
-// const WIDTH: usize = 100;
+// const WIDTH: usize = 800;
+const WIDTH: usize = 100;
 const ROW_HEIGHT: usize = 10;
 const ROW_FILL_HEIGHT: usize = 5;
 const CONTROL_COLOR: Color = Color::Red;
@@ -15,6 +15,7 @@ const CONTROL_COLOR: Color = Color::Red;
 enum DrawError {
     OutOfBounds(usize, usize),
     ColorMismatch(Color, Color),
+    Todo,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,17 @@ impl PietCodeBuffer {
             c if *c == color => (),
             c => { return Err(DrawError::ColorMismatch(color, *c)); }
         }
+        Ok(())
+    }
+
+    fn draw_pixel_overwrite(&mut self, x: usize, y: usize, color: Color) -> Result<(), DrawError> {
+        if x >= self.width || y >= self.height {
+            // TODO: kind of spooky with our resizeable buffer. reconsider this.
+            if matches!(color, Color::Black) { return Ok(()); }
+            else { return Err(DrawError::OutOfBounds(x, y)); }
+        }
+        let idx = y * self.width + x;
+        self.code[idx] = color;
         Ok(())
     }
 }
@@ -97,6 +109,11 @@ impl<'a> PietCodeBufferEdit<'a> {
         self.poison_on_err(result)
     }
 
+    fn draw_pixel_overwrite(&mut self, x: usize, y: usize, color: Color) -> Result<(), DrawError> {
+        let result = self.edited.draw_pixel_overwrite(x, y, color);
+        self.poison_on_err(result)
+    }
+
     fn draw_rect(&mut self, left: usize, top: usize, width: usize, height: usize, color: Color) -> Result<(), DrawError> {
         for x in left..left + width {
             for y in top..top + height {
@@ -105,6 +122,27 @@ impl<'a> PietCodeBufferEdit<'a> {
             }
         }
         Ok(())
+    }
+
+    fn draw_horiz(&mut self, y: usize) -> Result<(), DrawError> {
+        for x in 0..self.edited.width {
+            let res = self.draw_pixel(x, y, Color::White);
+            self.poison_on_err(res)?;
+        }
+        Ok(())
+    }
+
+    fn draw_newline(&mut self, x: usize, y: usize) -> Result<(), DrawError> {
+        self.reserve(ROW_HEIGHT);
+        self.draw_rect(x, y, 1, ROW_HEIGHT - 2, Color::White)?;
+        self.draw_horiz(y + ROW_HEIGHT - 2)?;
+        self.draw_pixel(x + 1, y, Color::Black)?;
+        self.draw_pixel(x, y + ROW_HEIGHT - 1, Color::Black)?;
+        self.draw_pixel(0, y + ROW_HEIGHT - 4, Color::Black)?;
+        self.draw_pixel(2, y + ROW_HEIGHT - 3, Color::Black)?;
+        self.draw_pixel(1, y + ROW_HEIGHT + 2, Color::Black)?;
+        self.draw_rect(0, y + ROW_HEIGHT - 3, 2, 5, Color::White)?;
+        self.draw_pixel_overwrite(0, y + ROW_HEIGHT - 1, Color::Black)
     }
 }
 
@@ -131,7 +169,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
     let mut last_color: Option<Color> = None;
     let mut buffer = PietCodeBuffer::new(WIDTH, ROW_HEIGHT);
     let mut x = 0;
-    let y = 0;
+    let mut y = 0;
 
     let mut labels: HashMap<String, (usize, usize)> = HashMap::new();
 
@@ -141,6 +179,12 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
             println!("{cmd:?}");
             match cmd {
                 AsmCommand::Label(s) => {
+                    if x + 4 >= WIDTH {
+                        buffer.edit().draw_newline(x, y)?;
+                        x = 2;
+                        y += ROW_HEIGHT;
+                        last_color = None;
+                    }
                     let mut edit = buffer.edit();
                     edit.draw_pixel(x, y, Color::White)?;
                     edit.draw_rect(x + 1, y, 2, 2, Color::White)?;
@@ -159,15 +203,23 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     // TODO: push is hard.. as a first pass we're unconditionally
                     // ensuring a white intro, but we could try being more
                     // clever here.
-                    let num = num.to_usize().expect("larger constants are currently unsupported");
+                    let num = num.to_usize().expect("larger constants are unsupported");
+                    let sans_dangle = num - 1;
+                    let width = sans_dangle / ROW_FILL_HEIGHT;
+                    let extra = sans_dangle % ROW_FILL_HEIGHT;
+
+                    if x + width + 5 >= WIDTH {
+                        buffer.edit().draw_newline(x, y)?;
+                        x = 2;
+                        y += ROW_HEIGHT;
+                        last_color = None;
+                    }
+
                     let mut edit = buffer.edit();
                     if last_color.is_some() {
                         edit.draw_pixel(x, y, Color::White)?;
                         x += 1;
                     }
-                    let sans_dangle = num - 1;
-                    let width = sans_dangle / ROW_FILL_HEIGHT;
-                    let extra = sans_dangle % ROW_FILL_HEIGHT;
                     edit.draw_rect(x, y, width, ROW_FILL_HEIGHT, CONTROL_COLOR)?;
                     x += width;
                     if extra > 0 {
@@ -185,6 +237,12 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                 AsmCommand::Divide | AsmCommand::Mod | AsmCommand::Not | AsmCommand::Greater |
                 AsmCommand::Duplicate | AsmCommand::Roll | AsmCommand::InNum | AsmCommand::InChar |
                 AsmCommand::OutNum | AsmCommand::OutChar => {
+                    if x + 3 >= WIDTH {
+                        buffer.edit().draw_newline(x, y)?;
+                        x = 2;
+                        y += ROW_HEIGHT;
+                        last_color = None;
+                    }
                     let cmd: Command = cmd.try_into().unwrap();
                     let mut edit = buffer.edit();
                     let color = match last_color {

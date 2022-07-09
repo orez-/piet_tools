@@ -6,6 +6,8 @@ fn push(val: i32) -> AsmCommand {
     AsmCommand::Push(val.into())
 }
 
+const BIG_NUMBER: u32 = 100;
+
 pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
     use AsmCommand::*;
 
@@ -50,6 +52,7 @@ pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
 pub(super) fn sanitize(mut asm: PietAsm) -> PietAsm {
     use AsmCommand::*;
 
+    // Factor out negative constants
     while let Some((idx, num)) = {
         asm.cmds.iter().enumerate().filter_map(|(i, e)| match e {
             Push(n) if n <= &BigInt::zero() => Some((i, n)),
@@ -63,7 +66,34 @@ pub(super) fn sanitize(mut asm: PietAsm) -> PietAsm {
         };
         asm.cmds.splice(idx..idx + 1, replace);
     }
+
+    // Factor out large constants
+    while let Some((idx, replace)) = {
+        asm.cmds.iter().enumerate().filter_map(|(i, e)| match e {
+            Push(n) => factor_big_number(n).map(|v| (i, v)),
+            _ => None,
+        }).next()
+    }
+    {
+        asm.cmds.splice(idx..idx + 1, replace);
+    }
     asm
+}
+
+// TODO: this is hard.
+fn factor_big_number(num: &BigInt) -> Option<Vec<AsmCommand>> {
+    use AsmCommand::*;
+
+    num.to_u32().map_or(true, |n| n >= BIG_NUMBER).then(|| {
+        let sqrt = num.sqrt();
+        let diff = num - (&sqrt * &sqrt);
+        let mut result = vec![Push(sqrt), Duplicate, Multiply];
+        if diff != BigInt::zero() {
+            result.push(Push(diff));
+            result.push(Add);
+        }
+        result
+    })
 }
 
 #[cfg(test)]

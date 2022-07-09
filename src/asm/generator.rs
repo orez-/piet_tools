@@ -5,14 +5,17 @@ use std::collections::HashMap;
 use std::iter::repeat;
 use std::mem::ManuallyDrop;
 
-// const WIDTH: usize = 800;
-const WIDTH: usize = 100;
+const WIDTH: usize = 800;
+// const WIDTH: usize = 100;
 const ROW_HEIGHT: usize = 10;
 const ROW_FILL_HEIGHT: usize = 5;
 const CONTROL_COLOR: Color = Color::Red;
 
 #[derive(Debug)]
-struct DrawError;
+enum DrawError {
+    OutOfBounds(usize, usize),
+    ColorMismatch(Color, Color),
+}
 
 #[derive(Debug, Clone)]
 struct PietCodeBuffer {
@@ -40,16 +43,16 @@ impl PietCodeBuffer {
     }
 
     fn draw_pixel(&mut self, x: usize, y: usize, color: Color) -> Result<(), DrawError> {
-        let idx = y * self.width + x;
         if x >= self.width || y >= self.height {
             // TODO: kind of spooky with our resizeable buffer. reconsider this.
             if matches!(color, Color::Black) { return Ok(()); }
-            else { return Err(DrawError); }
+            else { return Err(DrawError::OutOfBounds(x, y)); }
         }
+        let idx = y * self.width + x;
         match &mut self.code[idx] {
             c @ Color::Other => { *c = color; }
             c if *c == color => (),
-            _ => { return Err(DrawError); }
+            c => { return Err(DrawError::ColorMismatch(color, *c)); }
         }
         Ok(())
     }
@@ -63,6 +66,7 @@ impl PietCodeBuffer {
 struct PietCodeBufferEdit<'a> {
     original: &'a mut PietCodeBuffer,
     edited: ManuallyDrop<PietCodeBuffer>,
+    poisoned: bool,
 }
 
 impl<'a> PietCodeBufferEdit<'a> {
@@ -70,6 +74,17 @@ impl<'a> PietCodeBufferEdit<'a> {
         PietCodeBufferEdit {
             edited: ManuallyDrop::new(pcb.clone()),
             original: pcb,
+            poisoned: false,
+        }
+    }
+
+    fn poison_on_err<T>(&mut self, res: Result<T, DrawError>) -> Result<T, DrawError> {
+        match res {
+            err @ Err(_) => {
+                self.poisoned = true;
+                err
+            }
+            ok => ok,
         }
     }
 
@@ -78,15 +93,15 @@ impl<'a> PietCodeBufferEdit<'a> {
     }
 
     fn draw_pixel(&mut self, x: usize, y: usize, color: Color) -> Result<(), DrawError> {
-        self.edited.draw_pixel(x, y, color)
+        let result = self.edited.draw_pixel(x, y, color);
+        self.poison_on_err(result)
     }
 
-    // TODO: kinda feels like this outta be atomic? Maybe just poisoning the transaction is enough.
-    // If so, TODO: poison the transaction
     fn draw_rect(&mut self, left: usize, top: usize, width: usize, height: usize, color: Color) -> Result<(), DrawError> {
-        for y in top..top + height {
-            for x in left..left + width {
-                self.draw_pixel(x, y, color)?;
+        for x in left..left + width {
+            for y in top..top + height {
+                let res = self.draw_pixel(x, y, color);
+                self.poison_on_err(res)?;
             }
         }
         Ok(())
@@ -98,7 +113,9 @@ impl Drop for PietCodeBufferEdit<'_> {
         // SAFETY - it is unsafe to use `self.edited` after this,
         // but since we're immediately dropping this whole struct
         // I _think_ there's no chance of that.
-        *self.original = unsafe { ManuallyDrop::take(&mut self.edited) };
+        if !self.poisoned {
+            *self.original = unsafe { ManuallyDrop::take(&mut self.edited) };
+        }
     }
 }
 

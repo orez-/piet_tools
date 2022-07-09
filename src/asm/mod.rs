@@ -31,6 +31,7 @@ enum AsmCommand {
     Label(String),
     Jump(String),
     JumpIf(String),
+    Stop,
 }
 
 impl TryFrom<AsmCommand> for Command {

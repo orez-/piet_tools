@@ -77,6 +77,11 @@ pub(super) fn sanitize(mut asm: PietAsm) -> PietAsm {
     {
         asm.cmds.splice(idx..idx + 1, replace);
     }
+
+    // End on an "STOP"
+    if !matches!(asm.cmds.last(), Some(Stop | Jump(_))) {
+        asm.cmds.push(Stop);
+    }
     asm
 }
 

@@ -258,6 +258,22 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     x += 1;
                     last_color = Some(color);
                 }
+                AsmCommand::Stop => {
+                    if x + 4 >= WIDTH {
+                        buffer.edit().draw_newline(x, y)?;
+                        x = 2;
+                        y += ROW_HEIGHT;
+                        last_color = None;
+                    }
+                    let mut edit = buffer.edit();
+                    edit.draw_rect(x, y - 1, 4, 4, Color::Black)?;
+                    edit.draw_pixel_overwrite(x, y, Color::White)?;
+                    edit.draw_pixel_overwrite(x + 1, y, Color::White)?;
+                    edit.draw_pixel_overwrite(x + 2, y, CONTROL_COLOR)?;
+                    edit.draw_pixel_overwrite(x + 2, y + 1, CONTROL_COLOR)?;
+                    edit.draw_pixel_overwrite(x + 1, y + 1, CONTROL_COLOR)?;
+                    x += 4;
+                }
             }
         }
         Ok(())

@@ -35,13 +35,14 @@ fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
                 c.cmds.push(AsmCommand::Push(arg));
             }
         }
-        Cmd { cmd: cmd @ ("POP" | "DUP" | "INNUM" | "INCHAR"), args } => {
+        Cmd { cmd: cmd @ ("POP" | "DUP" | "INNUM" | "INCHAR" | "STOP"), args } => {
             validate_arg_count(args.len(), 0, Some(0))?;
             c.cmds.push(match cmd {
                 "POP" => AsmCommand::Pop,
                 "DUP" => AsmCommand::Duplicate,
                 "INNUM" => AsmCommand::InNum,
                 "INCHAR" => AsmCommand::InChar,
+                "STOP" => AsmCommand::Stop,
                 _ => unreachable!(),
             });
         }

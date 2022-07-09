@@ -53,7 +53,7 @@ impl PietCodeBuffer {
             self.reserve(height);
             let x = self.x;
             let y = self.y;
-            PietCodeBufferEdit::new(self).draw_newline(x, y)?;
+            PietCodeBufferEdit::new(self).draw_newline(x, y + 1)?;
             self.x = 2;
             self.y += ROW_HEIGHT;
             self.last_color = None;
@@ -242,16 +242,24 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
 
     // wow i suddenly get why Rust could use a `try` block.
     let res = (|| -> Result<(), DrawError> {
+        let mut edit = buffer.allocate(3)?;
+        edit.draw_pixel(0, 0, CONTROL_COLOR)?;
+        edit.draw_pixel(0, 1, CONTROL_COLOR)?;
+        edit.draw_pixel(1, 1, CONTROL_COLOR)?;
+        mem::drop(edit);
+        buffer.x += 2;
+        buffer.last_color = Some(CONTROL_COLOR);
+
         for cmd in asm.cmds {
             println!("{cmd:?}");
             match cmd {
                 AsmCommand::Label(s) => {
                     let mut edit = buffer.allocate(4)?;
-                    edit.draw_pixel(0, 0, Color::White)?;
-                    edit.draw_rect(1, 0, 2, 2, Color::White)?;
-                    // edit.draw_pixel(1, -1, Color::Black)?;  // TODO: fix outta bounds
-                    edit.draw_pixel(0, 1, Color::Black)?;
-                    edit.draw_pixel(2, 2, Color::Black)?;
+                    edit.draw_pixel(0, 1, Color::White)?;
+                    edit.draw_rect(1, 1, 2, 2, Color::White)?;
+                    edit.draw_pixel(1, 0, Color::Black)?;  // TODO: fix outta bounds
+                    edit.draw_pixel(0, 2, Color::Black)?;
+                    edit.draw_pixel(2, 3, Color::Black)?;
                     mem::drop(edit);
                     // labels.insert(s, (x + 1, y));
                     buffer.x += 3;
@@ -273,18 +281,18 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     let mut edit = buffer.allocate(width + 5)?;
                     let mut x = 0;
                     if has_color {
-                        edit.draw_pixel(0, 0, Color::White)?;
+                        edit.draw_pixel(0, 1, Color::White)?;
                         x = 1;
                     }
-                    edit.draw_rect(x, 0, width, ROW_FILL_HEIGHT, CONTROL_COLOR)?;
+                    edit.draw_rect(x, 1, width, ROW_FILL_HEIGHT, CONTROL_COLOR)?;
                     x += width;
                     if extra > 0 {
-                        edit.draw_rect(x, 0, 1, extra, CONTROL_COLOR)?;
+                        edit.draw_rect(x, 1, 1, extra, CONTROL_COLOR)?;
                         x += 1;
                     }
-                    edit.draw_pixel(x, 0, CONTROL_COLOR)?;
+                    edit.draw_pixel(x, 1, CONTROL_COLOR)?;
                     let color = CONTROL_COLOR.next_for_command(Command::Push);
-                    edit.draw_pixel(x + 1, 0, color)?;
+                    edit.draw_pixel(x + 1, 1, color)?;
                     mem::drop(edit);
                     buffer.x += x + 2;
                     buffer.last_color = Some(color);
@@ -300,25 +308,25 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     let color = match last_color {
                         Some(color) => color,
                         None => {
-                            edit.draw_pixel(0, 0, CONTROL_COLOR)?;
+                            edit.draw_pixel(0, 1, CONTROL_COLOR)?;
                             x += 1;
                             CONTROL_COLOR
                         }
                     };
                     let color = color.next_for_command(cmd);
-                    edit.draw_pixel(x, 0, color)?;
+                    edit.draw_pixel(x, 1, color)?;
                     mem::drop(edit);
                     buffer.x += x + 1;
                     buffer.last_color = Some(color);
                 }
                 AsmCommand::Stop => {
                     let mut edit = buffer.allocate(4)?;
-                    // edit.draw_rect(0, -1, 4, 4, Color::Black)?;  // TODO: fix outta boundddds..
-                    edit.draw_pixel_overwrite(0, 0, Color::White)?;
-                    edit.draw_pixel_overwrite(1, 0, Color::White)?;
-                    edit.draw_pixel_overwrite(2, 0, CONTROL_COLOR)?;
+                    edit.draw_rect(0, 0, 4, 4, Color::Black)?;  // TODO: fix outta boundddds..
+                    edit.draw_pixel_overwrite(0, 1, Color::White)?;
+                    edit.draw_pixel_overwrite(1, 1, Color::White)?;
                     edit.draw_pixel_overwrite(2, 1, CONTROL_COLOR)?;
-                    edit.draw_pixel_overwrite(1, 1, CONTROL_COLOR)?;
+                    edit.draw_pixel_overwrite(2, 2, CONTROL_COLOR)?;
+                    edit.draw_pixel_overwrite(1, 2, CONTROL_COLOR)?;
                     mem::drop(edit);
                     buffer.x += 4;
                     buffer.last_color = None;  // TODO: is this right?

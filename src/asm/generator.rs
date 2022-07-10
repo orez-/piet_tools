@@ -56,7 +56,8 @@ impl PietCodeBuffer {
         Ok(PietCodeBufferEdit::new_slice(self, area))
     }
 
-    fn allocate(&mut self, width: usize) -> Result<PietCodeBufferEdit, DrawError> {
+    // TODO signature sucks, burn this place down
+    fn allocate(&mut self, width: usize) -> Result<(PietCodeBufferEdit, Option<Color>), DrawError> {
         const ATTEMPTS: i32 = 10;
         let height = ROW_HEIGHT;
         let mut attempts = 0;
@@ -80,7 +81,7 @@ impl PietCodeBuffer {
                 PietCodeBufferEdit::new(self)
                     .draw_rect(x, y + 1, idx - x + 1, 1, Color::White)?;
                 self.x = idx + 1;
-                // aughghhh this never gets read,
+                // AUGHGHHH this never gets read,
                 // since we're returning the PCBE at the end here.
                 // TODO: hoist this metadata crap.
                 self.last_color = None;
@@ -95,7 +96,8 @@ impl PietCodeBuffer {
             return Err(DrawError::AllocationError);
         }
         let area = Rect { x: self.x, y: self.y, width, height };
-        Ok(PietCodeBufferEdit::new_slice(self, area))
+        let last_color = self.last_color;
+        Ok((PietCodeBufferEdit::new_slice(self, area), last_color))
     }
 
     fn advance_to(&mut self, to_x: usize) -> Result<(), DrawError> {
@@ -128,8 +130,7 @@ impl PietCodeBuffer {
 
     fn draw_command(&mut self, cmd: Command) -> Result<(), DrawError> {
         let mut x = 0;
-        let last_color = self.last_color;
-        let mut edit = self.allocate(3)?;
+        let (mut edit, last_color) = self.allocate(3)?;
         let color = match last_color {
             Some(color) => color,
             None => {
@@ -327,7 +328,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
 
     // wow i suddenly get why Rust could use a `try` block.
     let res = (|| -> Result<(), DrawError> {
-        let mut edit = buffer.allocate(3)?;
+        let (mut edit, _) = buffer.allocate(3)?;
         edit.draw_pixel(0, 0, CONTROL_COLOR)?;
         edit.draw_pixel(0, 1, CONTROL_COLOR)?;
         edit.draw_pixel(1, 1, CONTROL_COLOR)?;
@@ -354,7 +355,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         buffer.last_color = None;
                     }
                     else {
-                        let mut edit = buffer.allocate(4)?;
+                        let (mut edit, _) = buffer.allocate(4)?;
                         edit.draw_pixel(0, 1, Color::White)?;
                         edit.draw_rect(1, 1, 2, 2, Color::White)?;
                         edit.draw_pixel(1, 0, Color::Black)?;  // TODO: fix outta bounds
@@ -410,8 +411,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     else {
                         // TODO: there's gotta be a nicer api with `draw_command`
                         let mut x = 0;
-                        let last_color = buffer.last_color;
-                        let mut edit = buffer.allocate(4)?;
+                        let (mut edit, last_color) = buffer.allocate(4)?;
                         let color = match last_color {
                             Some(color) => color,
                             None => {
@@ -441,7 +441,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     let extra = sans_dangle % ROW_FILL_HEIGHT;
 
                     let has_color = buffer.last_color.is_some();
-                    let mut edit = buffer.allocate(width + 5)?;
+                    let (mut edit, _) = buffer.allocate(width + 5)?;
                     let mut x = 0;
                     if has_color {
                         // println!("drawin intro");
@@ -469,7 +469,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     buffer.draw_command(cmd)?;
                 }
                 AsmCommand::Stop => {
-                    let mut edit = buffer.allocate(4)?;
+                    let (mut edit, _) = buffer.allocate(4)?;
                     edit.draw_rect(0, 0, 4, 4, Color::Black)?;  // TODO: fix outta boundddds..
                     edit.draw_pixel_overwrite(0, 1, Color::White)?;
                     edit.draw_pixel_overwrite(1, 1, Color::White)?;

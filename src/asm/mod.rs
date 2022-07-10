@@ -1,5 +1,6 @@
 use crate::{Command, PietCode};
 use num_bigint::BigInt;
+use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -72,6 +73,12 @@ struct ParseError {
     error_type: ParseErrorType,
 }
 
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "error at {}: {}", self.lineno, self.error_type)
+    }
+}
+
 #[derive(Debug)]
 enum ParseErrorType {
     EmptyIdentifier,
@@ -97,6 +104,32 @@ impl ParseErrorType {
     }
 }
 
+impl fmt::Display for ParseErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use ParseErrorType::*;
+
+        match self {
+            EmptyIdentifier => write!(f, "empty identifier"),
+            InvalidIdentifierFormat(id) => write!(f, "invalid identifier '{id}'"),
+            UnrecognizedCommand(cmd) => write!(f, "unrecognized command '{cmd}'"),
+            WrongArgumentCount(count, min, None) => {
+                write!(f, "expected at least {min} arguments, but found {count}")
+            }
+            WrongArgumentCount(count, min, Some(max)) => {
+                write!(f, "expected between {min} and {max} arguments, but found {count}")
+            }
+            ExpectedInteger(code) => write!(f, "invalid integer literal '{code}'"),
+            MissingLabel(label) => write!(f, "missing label '{label}'"),
+            DuplicateLabel(label) => write!(f, "duplicate label '{label}'"),
+            UnboundVarError(var) => write!(f, "unbound var '{var}'"),
+            InvalidPragma(line) => write!(f, "invalid pragma: '{line}'"),
+            MissingEnd => write!(f, "unclosed delimiter"),
+            ExtraEnd => write!(f, "unexpected closing delimiter"),
+            TypeError => write!(f, "type error"),
+        }
+    }
+}
+
 fn parse(lines: &[String]) -> Result<PietCode, ParseError> {
     let ast = preprocessor::preprocess(lines)?;
     let asm = parser::to_bytecode(ast)?;
@@ -111,5 +144,5 @@ pub fn load(filename: &str) -> Result<PietCode, String> {
     let reader = BufReader::new(file);
     let lines: Result<Vec<_>, _> = reader.lines().collect();
     let lines = lines.map_err(|e| e.to_string())?;
-    parse(&lines).map_err(|e| format!("{e:?}"))
+    parse(&lines).map_err(|e| e.to_string())
 }

@@ -384,12 +384,14 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         println!("jump: {dest} {y0} {}", buffer.y);
                         buffer.draw_jump(dest, y0, buffer.y + 1)?;
                         buffer.x += 5;
+                        buffer.last_color = None;
                     }
                     else {
                         return Err(DrawError::Todo);
                     }
                 }
                 AsmCommand::JumpIf(label) => {
+                    // connecting to an existing label
                     if let Some(&(dest, y0)) = labels.get(&label) {
                         buffer.advance_to(dest - 1)?;
                         let mut edit = buffer.allocate_here(5)?;
@@ -402,12 +404,15 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         mem::drop(edit);
                         buffer.draw_jump(dest, y0, buffer.y + 1)?;
                         buffer.x += 4;
+                        buffer.last_color = Some(color);
                     }
+                    // connecting to an existing jump
                     else if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
                         buffer.advance_to(dest - 1)?;
                         eprintln!("jumpif to jumpif");
                         return Err(DrawError::Todo);
                     }
+                    // first of their name
                     else {
                         // TODO: there's gotta be a nicer api with `draw_command`
                         let mut x = 0;
@@ -429,6 +434,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         let key = (buffer.x + x, buffer.y + 1);
                         unmatched_jumps.insert(label, key);
                         buffer.x += x + 2;
+                        buffer.last_color = Some(color);
                     }
                 }
                 AsmCommand::Push(num) => {

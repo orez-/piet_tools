@@ -50,7 +50,7 @@ impl PietCodeBuffer {
         }
     }
 
-    fn allocate_force(&mut self, width: usize) -> Result<PietCodeBufferEdit, DrawError> {
+    fn allocate_here(&mut self, width: usize) -> Result<PietCodeBufferEdit, DrawError> {
         let height = ROW_HEIGHT;
         let area = Rect { x: self.x, y: self.y, width, height };
         Ok(PietCodeBufferEdit::new_slice(self, area))
@@ -120,6 +120,8 @@ impl PietCodeBuffer {
     }
 
     fn draw_jump(&mut self, x: usize, y0: usize, y1: usize) -> Result<(), DrawError> {
+        println!("draw_jump: {x} {y0} {y1}");
+        assert!(y0 < y1);
         let mut edit = PietCodeBufferEdit::new(self);
         edit.draw_rect(x, y0, 1, y1 - y0, Color::White)
     }
@@ -339,13 +341,15 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                 AsmCommand::Label(label) => {
                     if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
                         buffer.advance_to(dest - 2)?;
-                        let mut edit = buffer.allocate_force(4)?;
+                        let mut edit = buffer.allocate_here(4)?;
                         edit.draw_pixel(0, 1, Color::White)?;
                         edit.draw_rect(1, 1, 2, 2, Color::White)?;
                         edit.draw_pixel(1, 0, Color::Black)?;  // TODO: fix outta bounds
                         edit.draw_pixel(0, 2, Color::Black)?;
                         edit.draw_pixel(2, 3, Color::Black)?;
                         mem::drop(edit);
+                        buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
+                        labels.insert(label, (buffer.x + 1, buffer.y + 1));
                         buffer.x += 3;
                         buffer.last_color = None;
                     }
@@ -369,7 +373,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     if let Some(&(dest, y0)) = labels.get(&label) {
                         println!("{dest:?}");
                         buffer.advance_to(dest - 1)?;
-                        let mut edit = buffer.allocate_force(4)?;
+                        let mut edit = buffer.allocate_here(4)?;
                         edit.draw_rect(1, 1, 2, 2, Color::White)?;
                         edit.draw_pixel(0, 1, Color::White)?;
                         edit.draw_pixel(3, 1, Color::Black)?;
@@ -385,17 +389,25 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     }
                 }
                 AsmCommand::JumpIf(label) => {
-                    // eprintln!("Skipping {cmd:?} for a sec! Sorry!");
                     if let Some(&(dest, y0)) = labels.get(&label) {
+                        buffer.advance_to(dest - 1)?;
+                        let mut edit = buffer.allocate_here(5)?;
+                        edit.draw_rect(0, 1, 4, 2, Color::White)?;
+                        edit.draw_pixel_overwrite(2, 1, CONTROL_COLOR)?;
+                        let color = CONTROL_COLOR.next_for_command(Command::Pointer);
+                        edit.draw_pixel_overwrite(3, 1, color)?;
+                        edit.draw_pixel_overwrite(0, 2, Color::Black)?;
+                        edit.draw_pixel(3, 3, Color::Black)?;
+                        mem::drop(edit);
+                        buffer.draw_jump(dest, y0, buffer.y + 1)?;
+                        buffer.x += 4;
+                    }
+                    else if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
+                        buffer.advance_to(dest - 1)?;
+                        eprintln!("jumpif to jumpif");
                         return Err(DrawError::Todo);
                     }
                     else {
-                        let key = (buffer.x, buffer.y);
-                        let jumped = unmatched_jumps.insert(label, key);
-                        if jumped.is_some() {
-                            eprintln!("augh damn two jumps to the same label");
-                            return Err(DrawError::Todo);
-                        }
                         // TODO: there's gotta be a nicer api with `draw_command`
                         let mut x = 0;
                         let last_color = buffer.last_color;
@@ -414,6 +426,8 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         edit.draw_pixel(x + 1, 1, color)?;
                         mem::drop(edit);
                         buffer.jump_xs.insert(buffer.x + x);
+                        let key = (buffer.x + x, buffer.y + 1);
+                        unmatched_jumps.insert(label, key);
                         buffer.x += x + 2;
                     }
                 }

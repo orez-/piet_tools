@@ -501,11 +501,16 @@ impl PietVM {
                 self.stack.push(top);
             }
             Command::Roll => {
-                let (dive, roll) = self.pop2()?;
-                if dive < BigInt::zero() { panic!(); }  // TODO: exit without popping
-                let roll = roll.mod_floor(&dive).to_usize().unwrap();
-                let dive = dive.to_usize().unwrap();
-                let start = self.stack.len() - dive;
+                let len = self.stack.len();
+                if len < 2 { return None; }
+                let (dive, roll) = if let [d, r] = &self.stack[len - 2..] { (d, r) }
+                    else { unreachable!(); };  // rust you dingus
+
+                if dive <= &BigInt::zero() { return None; }
+                let roll = roll.mod_floor(&dive).to_usize()?;
+                let dive = dive.to_usize()?;
+                let start = (len - 2).checked_sub(dive)?;
+                self.pop2()?;
                 self.stack[start..].rotate_right(roll);
             }
             Command::InNum => { todo!(); }

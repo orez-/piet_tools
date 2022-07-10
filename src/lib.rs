@@ -378,10 +378,28 @@ impl Default for InstructionPointer {
 #[derive(Debug)]
 enum ExecutionError {
     NotEnoughStack(usize, usize),
-    NegativeDive,
+    NegativeRoll(BigInt),
     IntegerOverflow,
+    DivisionByZero,
     IoError(std::io::Error),
     EncodeError(BigInt),
+}
+
+impl fmt::Display for ExecutionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use ExecutionError::*;
+
+        match self {
+            NotEnoughStack(requested, stack_len) => {
+                write!(f, "insufficient stack length ({stack_len}); expected at least {requested}")
+            }
+            NegativeRoll(num) => write!(f, "expected positive roll depth, not {num}"),
+            IntegerOverflow => write!(f, "integer overflow"),
+            IoError(e) => write!(f, "IO error: {e}"),
+            DivisionByZero => write!(f, "division by zero"),
+            EncodeError(num) => write!(f, "can't encode integer '{num}' as character"),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -493,10 +511,18 @@ impl PietVM {
                 self.stack.push(a * b);
             }
             Command::Divide => {
+                let (_, b) = self.last2()?;
+                if b == &BigInt::zero() {
+                    return Err(ExecutionError::DivisionByZero);
+                }
                 let (a, b) = self.pop2()?;
                 self.stack.push(a.div_floor(&b));
             }
             Command::Mod => {
+                let (_, b) = self.last2()?;
+                if b == &BigInt::zero() {
+                    return Err(ExecutionError::DivisionByZero);
+                }
                 let (a, b) = self.pop2()?;
                 self.stack.push(a.mod_floor(&b));
             }
@@ -528,7 +554,9 @@ impl PietVM {
             }
             Command::Roll => {
                 let (dive, roll) = self.last2()?;
-                if dive <= &BigInt::zero() { return Err(ExecutionError::NegativeDive); }
+                if dive <= &BigInt::zero() {
+                    return Err(ExecutionError::NegativeRoll(dive.clone()));
+                }
                 let roll = roll.mod_floor(&dive).to_usize()
                     .ok_or(ExecutionError::IntegerOverflow)?;
                 let dive = dive.to_usize()
@@ -588,7 +616,7 @@ impl PietVM {
                     region.color, value, next_color,
                 );
                 if let Err(err) = self.run_command(command, value) {
-                    eprintln!("{err:?}");
+                    eprintln!("Skipping command: {err}");
                 }
                 self.pos = coord;
                 true
@@ -693,8 +721,44 @@ mod tests {
     #[test]
     fn test_roll() {
         let mut vm = PietVM { stack: to_stack(&[4, 5, 6, 7, 8, 9, 3, 2]), ..Default::default() };
-        vm.run_command(Command::Roll, BigInt::zero());
+        vm.run_command(Command::Roll, BigInt::zero()).unwrap();
         assert_eq!(vm.stack, to_stack(&[4, 5, 6, 8, 9, 7]));
+    }
+
+    #[test]
+    fn test_div_zero() {
+        let mut vm = PietVM { stack: to_stack(&[4, 0]), ..Default::default() };
+        let result = vm.run_command(Command::Divide, BigInt::zero());
+        assert!(matches!(result, Err(ExecutionError::DivisionByZero)));
+        assert_eq!(vm.stack, to_stack(&[4, 0]));
+    }
+
+    /// If we're going to divide by zero but have too few arguments on the stack,
+    /// prefer the "too few arguments" message
+    #[test]
+    fn test_div_zero_too_few() {
+        let mut vm = PietVM { stack: to_stack(&[0]), ..Default::default() };
+        let result = vm.run_command(Command::Divide, BigInt::zero());
+        assert!(matches!(result, Err(ExecutionError::NotEnoughStack(2, 1))));
+        assert_eq!(vm.stack, to_stack(&[0]));
+    }
+
+    #[test]
+    fn test_mod_zero() {
+        let mut vm = PietVM { stack: to_stack(&[4, 0]), ..Default::default() };
+        let result = vm.run_command(Command::Mod, BigInt::zero());
+        assert!(matches!(result, Err(ExecutionError::DivisionByZero)));
+        assert_eq!(vm.stack, to_stack(&[4, 0]));
+    }
+
+    /// If we're going to modulo by zero but have too few arguments on the stack,
+    /// prefer the "too few arguments" message
+    #[test]
+    fn test_mod_zero_too_few() {
+        let mut vm = PietVM { stack: to_stack(&[0]), ..Default::default() };
+        let result = vm.run_command(Command::Mod, BigInt::zero());
+        assert!(matches!(result, Err(ExecutionError::NotEnoughStack(2, 1))));
+        assert_eq!(vm.stack, to_stack(&[0]));
     }
 
     /// Exercises sliding, slide cycle detection, and slide CC maintenance

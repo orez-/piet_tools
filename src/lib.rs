@@ -375,6 +375,15 @@ impl Default for InstructionPointer {
     }
 }
 
+#[derive(Debug)]
+enum ExecutionError {
+    NotEnoughStack(usize, usize),
+    NegativeDive,
+    IntegerOverflow,
+    IoError(std::io::Error),
+    EncodeError(BigInt),
+}
+
 #[derive(Default)]
 pub struct PietVM {
     instruction_pointer: InstructionPointer,
@@ -438,22 +447,39 @@ impl PietVM {
         None
     }
 
-    fn pop2(&mut self) -> Option<(BigInt, BigInt)> {
-        if self.stack.len() < 2 {
-            return None;
-        }
-        let b = self.stack.pop()?;
-        let a = self.stack.pop()?;
-        Some((a, b))
+    fn pop1(&mut self) -> Result<BigInt, ExecutionError> {
+        self.stack.pop()
+            .ok_or_else(|| ExecutionError::NotEnoughStack(1, 0))
     }
 
-    fn run_command(&mut self, command: Command, value: BigInt) -> Option<()> {
+    fn pop2(&mut self) -> Result<(BigInt, BigInt), ExecutionError> {
+        if self.stack.len() < 2 {
+            return Err(ExecutionError::NotEnoughStack(2, self.stack.len()));
+        }
+        let b = self.stack.pop().unwrap();
+        let a = self.stack.pop().unwrap();
+        Ok((a, b))
+    }
+
+    fn last1(&self) -> Result<&BigInt, ExecutionError> {
+        self.stack.last()
+            .ok_or_else(|| ExecutionError::NotEnoughStack(1, 0))
+    }
+
+    fn last2(&self) -> Result<(&BigInt, &BigInt), ExecutionError> {
+        let len = self.stack.len();
+        if len < 2 { return Err(ExecutionError::NotEnoughStack(2, self.stack.len())); }
+        if let [d, r] = &self.stack[len - 2..] { Ok((d, r)) }
+            else { unreachable!(); }  // rust you dingus
+    }
+
+    fn run_command(&mut self, command: Command, value: BigInt) -> Result<(), ExecutionError> {
         match command {
             Command::Noop => {}
             Command::Push => {
                 self.stack.push(value);
             }
-            Command::Pop => { self.stack.pop()?; }
+            Command::Pop => { self.pop1()?; }
             Command::Add => {
                 let (a, b) = self.pop2()?;
                 self.stack.push(a + b);
@@ -475,7 +501,7 @@ impl PietVM {
                 self.stack.push(a.mod_floor(&b));
             }
             Command::Not => {
-                let num = self.stack.pop()?;
+                let num = self.pop1()?;
                 let zero = BigInt::zero();
                 self.stack.push(if num == zero { BigInt::one() } else { zero });
             }
@@ -484,32 +510,32 @@ impl PietVM {
                 self.stack.push(if a > b { BigInt::one() } else { BigInt::zero() });
             }
             Command::Pointer => {
-                let spin = self.stack.pop()?;
+                let spin = self.pop1()?;
                 let spin = spin.mod_floor(&(4.into())).to_u8().unwrap();
                 for _ in 0..spin {
                     self.instruction_pointer.rotate();
                 }
             }
             Command::Switch => {
-                let swap = self.stack.pop()?;
+                let swap = self.pop1()?;
                 if swap % 2 != BigInt::zero() {
                     self.instruction_pointer.flip();
                 }
             }
             Command::Duplicate => {
-                let top = self.stack.last()?.clone();
+                let top = self.last1()?.clone();
                 self.stack.push(top);
             }
             Command::Roll => {
-                let len = self.stack.len();
-                if len < 2 { return None; }
-                let (dive, roll) = if let [d, r] = &self.stack[len - 2..] { (d, r) }
-                    else { unreachable!(); };  // rust you dingus
-
-                if dive <= &BigInt::zero() { return None; }
-                let roll = roll.mod_floor(&dive).to_usize()?;
-                let dive = dive.to_usize()?;
-                let start = (len - 2).checked_sub(dive)?;
+                let (dive, roll) = self.last2()?;
+                if dive <= &BigInt::zero() { return Err(ExecutionError::NegativeDive); }
+                let roll = roll.mod_floor(&dive).to_usize()
+                    .ok_or(ExecutionError::IntegerOverflow)?;
+                let dive = dive.to_usize()
+                    .ok_or(ExecutionError::IntegerOverflow)?;
+                let len = self.stack.len() - 2;
+                let start = len.checked_sub(dive)
+                    .ok_or_else(|| ExecutionError::NotEnoughStack(len, dive))?;
                 self.pop2()?;
                 self.stack[start..].rotate_right(roll);
             }
@@ -520,20 +546,22 @@ impl PietVM {
 
                 let stdin = io::stdin();
                 let buf: &mut [u8] = &mut [0];
-                stdin.lock().read_exact(buf).ok()?;
+                stdin.lock().read_exact(buf).map_err(|e| ExecutionError::IoError(e))?;
                 self.stack.push(BigInt::from(buf[0]));
             }
             Command::OutNum => {
-                let num = self.stack.pop()?;
+                let num = self.pop1()?;
                 print!("{num}");
             }
             Command::OutChar => {
-                let num = self.stack.pop()?;
-                let chr = num.to_u8().unwrap() as char; // TODO: 👀
+                let num = self.pop1()?;
+                let chr = num.to_u8() // TODO: non-ascii? 👀
+                    .ok_or_else(|| ExecutionError::EncodeError(num))?
+                    as char;
                 print!("{chr}");
             }
         }
-        Some(())
+        Ok(())
     }
 
     // TODO: bool sucks
@@ -559,7 +587,9 @@ impl PietVM {
                     "({:?} ({}) -> {:?}) [{coord:?}] = {command:?}",
                     region.color, value, next_color,
                 );
-                self.run_command(command, value);
+                if let Err(err) = self.run_command(command, value) {
+                    eprintln!("{err:?}");
+                }
                 self.pos = coord;
                 true
             }

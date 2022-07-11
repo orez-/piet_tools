@@ -1,12 +1,40 @@
 use crate::asm::preprocessor::{Line, Statement, Token};
-use crate::asm::{AsmCommand, ParseError, ParseErrorType, PietAsm};
+use crate::asm::{AsmCommand, LabelId, ParseError, ParseErrorType, PietAsm};
 use std::collections::HashMap;
+
+type LineNo = usize;
+
+struct Label {
+    id: LabelId,
+    label_lineno: Option<LineNo>,
+    jump_lineno: Option<LineNo>,
+}
+
+impl Label {
+    fn new(id: LabelId) -> Self {
+        Label {
+            id,
+            label_lineno: None,
+            jump_lineno: None,
+        }
+    }
+}
 
 #[derive(Default)]
 struct ParseContext {
     cmds: Vec<AsmCommand>,
-    labels: HashMap<String, usize>,
-    missing_labels: HashMap<String, usize>,
+    global_label_id: LabelId,
+    labels: HashMap<String, Label>,
+}
+
+impl ParseContext {
+    fn get_label(&mut self, label_name: String) -> &mut Label {
+        self.labels.entry(label_name)
+            .or_insert_with(|| {
+                self.global_label_id += 1;
+                Label::new(self.global_label_id)
+            })
+    }
 }
 
 pub(super) fn to_bytecode(ast: Vec<Line>) -> Result<PietAsm, ParseError> {
@@ -15,9 +43,13 @@ pub(super) fn to_bytecode(ast: Vec<Line>) -> Result<PietAsm, ParseError> {
         let lineno = line.lineno;
         parse_line(line, &mut context).map_err(|e| e.at(lineno))?;
     }
-    if let Some((label, lineno)) = context.missing_labels.into_iter().next() {
+
+    let mut missing_labels = context.labels.iter()
+        .filter(|(_, label)| label.label_lineno.is_none());
+    if let Some((name, label)) = missing_labels.next() {
         // TODO: only grabs one here, not great.
-        return Err(ParseErrorType::MissingLabel(label).at(lineno));
+        let lineno = label.jump_lineno.unwrap();
+        return Err(ParseErrorType::MissingLabel(name.to_string()).at(lineno));
     }
     let ParseContext { cmds, .. } = context;
     Ok(PietAsm { cmds })
@@ -76,16 +108,16 @@ fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
         }
         Cmd { cmd: cmd @ ("JUMP" | "JUMPIF"), args } => {
             let mut labels: Vec<String> = validate_args(args, 1, Some(1))?;
-            let label = labels.pop().unwrap();
-            if !c.labels.contains_key(&label) {
-                c.missing_labels.entry(label.clone()).or_insert(lineno);
-            }
+            let label_name = labels.pop().unwrap();
+            let label = c.get_label(label_name);
+            label.jump_lineno.get_or_insert(lineno);
+            let label_id = label.id;
             match cmd {
-                "JUMP" => { c.cmds.push(AsmCommand::Jump(label)); }
+                "JUMP" => { c.cmds.push(AsmCommand::Jump(label_id)); }
                 "JUMPIF" => {
                     c.cmds.push(AsmCommand::Not);
                     c.cmds.push(AsmCommand::Not);
-                    c.cmds.push(AsmCommand::JumpIf(label));
+                    c.cmds.push(AsmCommand::JumpIf(label_id));
                 }
                 _ => unreachable!(),
             }
@@ -94,14 +126,16 @@ fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
             let cmd = cmd.to_string();
             return Err(ParseErrorType::UnrecognizedCommand(cmd));
         }
-        Statement::Label(label) => {
+        Statement::Label(label_name) => {
             // XXX: i _believe_ we already ran `parse_identifier`,
             // but it'd sure be nice if that were enforced by the type system.
-            if c.labels.insert(label.to_string(), lineno).is_some() {
-                return Err(ParseErrorType::DuplicateLabel(label.to_string()));
+            let label = c.get_label(label_name.to_string());
+            if label.label_lineno.is_some() {
+                return Err(ParseErrorType::DuplicateLabel(label_name.to_string()));
             }
-            c.missing_labels.remove(label);
-            c.cmds.push(AsmCommand::Label(label.to_string()));
+            let label_id = label.id;
+            label.label_lineno = Some(lineno);
+            c.cmds.push(AsmCommand::Label(label_id));
         }
     }
     Ok(())
@@ -118,4 +152,38 @@ fn validate_arg_count(count: usize, min: usize, max: Option<usize>) -> Result<()
         return Ok(());
     }
     Err(ParseErrorType::WrongArgumentCount(count, min, max))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use crate::asm::preprocessor;
+
+    #[test]
+    fn test_jump_no_label() {
+        let lines = vec!["JUMP NOPE".into()];
+        let ast = preprocessor::preprocess(&lines).unwrap();
+
+        assert_matches!(
+            to_bytecode(ast),
+            Err(ParseError { error_type: ParseErrorType::MissingLabel(s), .. })
+                if s == "NOPE"
+        )
+    }
+
+    #[test]
+    fn test_double_label() {
+        let lines = vec![
+            ":TWIN".into(),
+            ":TWIN".into(),
+        ];
+        let ast = preprocessor::preprocess(&lines).unwrap();
+
+        assert_matches!(
+            to_bytecode(ast),
+            Err(ParseError { error_type: ParseErrorType::DuplicateLabel(s), .. })
+                if s == "TWIN"
+        )
+    }
 }

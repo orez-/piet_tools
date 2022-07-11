@@ -9,6 +9,8 @@ mod optimizer;
 mod parser;
 mod preprocessor;
 
+pub type LabelId = usize;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum AsmCommand {
     Push(BigInt),
@@ -29,9 +31,9 @@ enum AsmCommand {
     OutNum,
     OutChar,
     // --
-    Label(String),
-    Jump(String),
-    JumpIf(String),
+    Label(LabelId),
+    Jump(LabelId),
+    JumpIf(LabelId),
     Stop,
 }
 

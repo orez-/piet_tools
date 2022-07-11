@@ -1,4 +1,4 @@
-use crate::asm::{AsmCommand, PietAsm};
+use crate::asm::{AsmCommand, LabelId, PietAsm};
 use crate::{Color, Command, PietCode};
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
@@ -328,8 +328,8 @@ impl From<PietCodeBuffer> for PietCode {
 pub(super) fn generate(asm: PietAsm) -> PietCode {
     let mut buffer = PietCodeBuffer::new(WIDTH, ROW_HEIGHT);
 
-    let mut labels: HashMap<String, (usize, usize)> = HashMap::new();
-    let mut unmatched_jumps: HashMap<String, (usize, usize)> = HashMap::new();
+    let mut labels: HashMap<LabelId, (usize, usize)> = HashMap::new();
+    let mut unmatched_jumps: HashMap<LabelId, (usize, usize)> = HashMap::new();
 
     // wow i suddenly get why Rust could use a `try` block.
     let res = (|| -> Result<(), DrawError> {

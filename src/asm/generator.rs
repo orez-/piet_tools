@@ -69,7 +69,7 @@ impl PietCodeBuffer {
                 PietCodeBufferEdit::new(self).draw_newline(x, y + 1)?;
                 self.x = 2;
                 self.y += height;
-                self.last_color = None;
+                self.last_color = Some(Color::White);
             }
             let idx = (0..width).rev().filter_map(|w| {
                 let x = w + self.x;
@@ -84,7 +84,7 @@ impl PietCodeBuffer {
                 // AUGHGHHH this never gets read,
                 // since we're returning the PCBE at the end here.
                 // TODO: hoist this metadata crap.
-                self.last_color = None;
+                self.last_color = Some(Color::White);
                 println!("bumpin");
                 attempts += 1;
                 continue;
@@ -102,21 +102,26 @@ impl PietCodeBuffer {
 
     fn advance_to(&mut self, to_x: usize) -> Result<(), DrawError> {
         println!("advance to {to_x} (from {})", self.x);
+        let do_draw = self.last_color.is_some();
         if to_x < self.x {  // passed already
             let height = ROW_HEIGHT;
             self.reserve(height);
             let x = self.x;
             let y = self.y;
-            PietCodeBufferEdit::new(self).draw_newline(x, y + 1)?;
+            if do_draw {
+                PietCodeBufferEdit::new(self).draw_newline(x, y + 1)?;
+            }
             self.x = 2;
             self.y += height;
         }
         let x = self.x;
         let y = self.y;
         let dist = to_x - x;
-        PietCodeBufferEdit::new(self).draw_rect(
-            x, y + 1, dist, 1, Color::White,
-        )?;
+        if do_draw {
+            PietCodeBufferEdit::new(self).draw_rect(
+                x, y + 1, dist, 1, Color::White,
+            )?;
+        }
         self.x += dist;
         Ok(())
     }
@@ -132,12 +137,12 @@ impl PietCodeBuffer {
         let mut x = 0;
         let (mut edit, last_color) = self.allocate(3)?;
         let color = match last_color {
-            Some(color) => color,
-            None => {
+            Some(Color::White) | None => {
                 edit.draw_pixel(0, 1, CONTROL_COLOR)?;
                 x += 1;
                 CONTROL_COLOR
             }
+            Some(color) => color,
         };
         let color = color.next_for_command(cmd);
         edit.draw_pixel(x, 1, color)?;
@@ -352,7 +357,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
                         labels.insert(label, (buffer.x + 1, buffer.y + 1));
                         buffer.x += 3;
-                        buffer.last_color = None;
+                        buffer.last_color = Some(Color::White);
                     }
                     else {
                         let (mut edit, _) = buffer.allocate(4)?;
@@ -366,7 +371,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         labels.insert(label, (buffer.x + 1, buffer.y + 1));
                         buffer.jump_xs.insert(buffer.x + 1);
                         buffer.x += 3;
-                        buffer.last_color = None;
+                        buffer.last_color = Some(Color::White);
                     }
                 }
                 AsmCommand::Jump(label) => {
@@ -418,12 +423,12 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         let mut x = 0;
                         let (mut edit, last_color) = buffer.allocate(4)?;
                         let color = match last_color {
-                            Some(color) => color,
-                            None => {
+                            Some(Color::White) | None => {
                                 edit.draw_pixel(0, 1, CONTROL_COLOR)?;
                                 x += 1;
                                 CONTROL_COLOR
                             }
+                            Some(color) => color,
                         };
                         let color = color.next_for_command(Command::Pointer);
                         edit.draw_pixel(x, 1, color)?;
@@ -484,7 +489,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     edit.draw_pixel_overwrite(1, 2, CONTROL_COLOR)?;
                     mem::drop(edit);
                     buffer.x += 4;
-                    buffer.last_color = None;  // TODO: is this right?
+                    buffer.last_color = None;
                 }
             }
         }

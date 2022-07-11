@@ -68,7 +68,6 @@ POP
   JUMPIF INTSEEK
     DUP
     MOD 2
-    NOT
     JUMPIF DIV_TRUE
     DIV 16
     :DIV_TRUE

@@ -1,5 +1,6 @@
 use crate::asm::{AsmCommand, LabelId, PietAsm};
 use crate::{Color, Command, PietCode};
+use indoc::indoc;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
@@ -10,6 +11,92 @@ const WIDTH: usize = 100;
 const ROW_HEIGHT: usize = 10;
 const ROW_FILL_HEIGHT: usize = 5;
 const CONTROL_COLOR: Color = Color::Red;
+
+macro_rules! draw {
+    ($buffer: expr, $pattern: literal) => {{
+        let pattern = DrawPattern::generate(indoc! {$pattern}, Vec::new());
+        $buffer.draw(pattern)
+    }};
+}
+
+macro_rules! draw_here {
+    ($buffer: expr, $pattern: literal) => {{
+        let pattern = DrawPattern::generate(indoc! {$pattern}, Vec::new());
+        $buffer.draw_here(pattern)
+    }};
+}
+
+struct DrawPattern {
+    off_y: usize,
+    step_x: usize,
+    allocation_width: usize,
+    last_color: Option<Color>,
+    pixels: Vec<(usize, usize, Color)>,
+}
+
+impl DrawPattern {
+    fn generate(pattern: &[u8], colors: Vec<Color>) -> Self {
+        let mut x = 0;
+        let mut y = 0;
+        let mut pixels = Vec::new();
+        let mut start_y = None;
+        let mut end = None;
+        for c in pattern {
+            match c {
+                b' ' => (),
+                b'>' if x == 0 => {
+                    if start_y.is_some() { panic!(); }
+                    start_y = Some(y);
+                }
+                _ if x == 0 => { panic!(); }
+                b'>' => {
+                    if end.is_some() { panic!(); }
+                    end = Some((x - 1, y));
+                }
+                b'.' => { pixels.push((x - 1, y, Color::White)); }
+                b'#' => { pixels.push((x - 1, y, Color::Black)); }
+                b'a'..=b'z' => {
+                    let idx = (c - b'a') as usize;
+                    pixels.push((x - 1, y, colors[idx]));
+                }
+                b'\n' => {
+                    x = 0;
+                    y += 1;
+                    continue;
+                }
+                _ => { panic!(); }
+            }
+            x += 1;
+        }
+        // We want to allocate enough space to draw all the pixels we're drawing.
+        // But if we're going to have to follow this up with another command
+        // we'll need another pixel to ensure we don't write into a wall.
+        let width = pixels.iter().map(|&(x, _, _)| x).max().unwrap() + 1;
+        let allocation_width = width + end.is_some() as usize;
+        let start_y = start_y.unwrap();
+        assert_eq!(start_y, 1);  // ugh. for now.
+        // let start_color = pixels.iter()
+        //     .filter_map(|&(x, y, p)| ((x - 1, y) == start).then(|| p))
+        //     .next().unwrap();
+        let end_color = end.map(|end| {
+            pixels.iter()
+                .filter_map(|&(x, y, p)| ((x + 1, y) == end).then(|| p))
+                .next().unwrap()
+        });
+        if let Some((x, y)) = end {
+            // for now, at least.
+            assert!(start_y == y);
+            assert!(pixels.iter().all(|&(px, _, _)| px < x));
+        }
+        DrawPattern {
+            off_y: start_y,
+            step_x: width,
+            last_color: end_color,
+            allocation_width,
+            pixels,
+        }
+    }
+}
 
 #[derive(Debug)]
 enum DrawError {
@@ -48,6 +135,29 @@ impl PietCodeBuffer {
             y: 0,
             jump_xs: HashSet::new(),
         }
+    }
+
+    fn draw(&mut self, pattern: DrawPattern) -> Result<(), DrawError> {
+        // uh oh, that last_color thing.
+        let (mut edit, _) = self.allocate(pattern.allocation_width)?;
+        for (x, y, color) in pattern.pixels {
+            edit.draw_pixel(x, y, color)?;
+        }
+        mem::drop(edit);
+        self.last_color = pattern.last_color;
+        self.x += pattern.step_x;
+        Ok(())
+    }
+
+    fn draw_here(&mut self, pattern: DrawPattern) -> Result<(), DrawError> {
+        let mut edit = self.allocate_here(pattern.allocation_width)?;
+        for (x, y, color) in pattern.pixels {
+            edit.draw_pixel(x, y, color)?;
+        }
+        mem::drop(edit);
+        self.last_color = pattern.last_color;
+        self.x += pattern.step_x;
+        Ok(())
     }
 
     fn allocate_here(&mut self, width: usize) -> Result<PietCodeBufferEdit, DrawError> {
@@ -110,6 +220,7 @@ impl PietCodeBuffer {
             let y = self.y;
             if do_draw {
                 PietCodeBufferEdit::new(self).draw_newline(x, y + 1)?;
+                self.last_color = Some(Color::White);
             }
             self.x = 2;
             self.y += height;
@@ -121,6 +232,7 @@ impl PietCodeBuffer {
             PietCodeBufferEdit::new(self).draw_rect(
                 x, y + 1, dist, 1, Color::White,
             )?;
+            self.last_color = Some(Color::White);
         }
         self.x += dist;
         Ok(())
@@ -347,17 +459,14 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                 AsmCommand::Label(label) => {
                     if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
                         buffer.advance_to(dest - 2)?;
-                        let mut edit = buffer.allocate_here(4)?;
-                        edit.draw_pixel(0, 1, Color::White)?;
-                        edit.draw_rect(1, 1, 2, 2, Color::White)?;
-                        edit.draw_pixel(1, 0, Color::Black)?;  // TODO: fix outta bounds
-                        edit.draw_pixel(0, 2, Color::Black)?;
-                        edit.draw_pixel(2, 3, Color::Black)?;
-                        mem::drop(edit);
+                        draw_here!(buffer, b"
+                             #
+                           >...>
+                            #..
+                              #
+                        ")?;
                         buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
-                        labels.insert(label, (buffer.x + 1, buffer.y + 1));
-                        buffer.x += 3;
-                        buffer.last_color = Some(Color::White);
+                        labels.insert(label, (dest - 1, buffer.y + 1));
                     }
                     else {
                         let (mut edit, _) = buffer.allocate(4)?;

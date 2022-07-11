@@ -63,13 +63,12 @@ impl TryFrom<AsmCommand> for Command {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct PietAsm {
     cmds: Vec<AsmCommand>,
+    jump_counts: Vec<usize>,
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct ParseError {
     lineno: usize,
     error_type: ParseErrorType,

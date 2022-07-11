@@ -8,6 +8,7 @@ struct Label {
     id: LabelId,
     label_lineno: Option<LineNo>,
     jump_lineno: Option<LineNo>,
+    jump_count: usize,
 }
 
 impl Label {
@@ -16,6 +17,7 @@ impl Label {
             id,
             label_lineno: None,
             jump_lineno: None,
+            jump_count: 0,
         }
     }
 }
@@ -31,8 +33,9 @@ impl ParseContext {
     fn get_label(&mut self, label_name: String) -> &mut Label {
         self.labels.entry(label_name)
             .or_insert_with(|| {
+                let id = self.global_label_id;
                 self.global_label_id += 1;
-                Label::new(self.global_label_id)
+                Label::new(id)
             })
     }
 }
@@ -51,8 +54,12 @@ pub(super) fn to_bytecode(ast: Vec<Line>) -> Result<PietAsm, ParseError> {
         let lineno = label.jump_lineno.unwrap();
         return Err(ParseErrorType::MissingLabel(name.to_string()).at(lineno));
     }
-    let ParseContext { cmds, .. } = context;
-    Ok(PietAsm { cmds })
+    let ParseContext { cmds, labels, .. } = context;
+    let mut jump_counts = vec![0; labels.len()];
+    for label in labels.values() {
+        jump_counts[label.id] = label.jump_count;
+    }
+    Ok(PietAsm { cmds, jump_counts })
 }
 
 fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
@@ -111,6 +118,7 @@ fn parse_line(line: Line, c: &mut ParseContext) -> Result<(), ParseErrorType> {
             let label_name = labels.pop().unwrap();
             let label = c.get_label(label_name);
             label.jump_lineno.get_or_insert(lineno);
+            label.jump_count += 1;
             let label_id = label.id;
             match cmd {
                 "JUMP" => { c.cmds.push(AsmCommand::Jump(label_id)); }

@@ -448,8 +448,11 @@ impl From<PietCodeBuffer> for PietCode {
 pub(super) fn generate(asm: PietAsm) -> PietCode {
     let mut buffer = PietCodeBuffer::new(WIDTH, ROW_HEIGHT);
 
+    // TODO: can these be the same thing?
     let mut labels: HashMap<LabelId, (usize, usize)> = HashMap::new();
     let mut unmatched_jumps: HashMap<LabelId, (usize, usize)> = HashMap::new();
+
+    let PietAsm { cmds, mut jump_counts } = asm;
 
     // wow i suddenly get why Rust could use a `try` block.
     let res = (|| -> Result<(), DrawError> {
@@ -461,7 +464,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
         buffer.x += 2;
         buffer.last_color = Some(CONTROL_COLOR);
 
-        for cmd in asm.cmds {
+        for cmd in cmds {
             println!("{cmd:?}");
             match cmd {
                 AsmCommand::Label(label) => {
@@ -486,6 +489,14 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         labels.insert(label, (buffer.x - 2, buffer.y + 1));
                         buffer.jump_xs.insert(buffer.x - 2);
                     }
+                    match jump_counts[label].checked_sub(1) {
+                        Some(num) => { jump_counts[label] = num; }
+                        None => {
+                            let x = buffer.x - 2;
+                            let did_remove = buffer.jump_xs.remove(&x);
+                            // assert!(did_remove);
+                        }
+                    }
                 }
                 AsmCommand::Jump(label) => {
                     // Label already exists
@@ -501,6 +512,14 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     }
                     else {
                         return Err(DrawError::Todo);
+                    }
+                    match jump_counts[label].checked_sub(1) {
+                        Some(num) => { jump_counts[label] = num; }
+                        None => {
+                            let x = buffer.x - 4;
+                            let did_remove = buffer.jump_xs.remove(&x);
+                            // assert!(did_remove);
+                        }
                     }
                 }
                 AsmCommand::JumpIf(label) => {
@@ -546,6 +565,14 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         unmatched_jumps.insert(label, key);
                         buffer.x += x + 2;
                         buffer.last_color = Some(color);
+                    }
+                    match jump_counts[label].checked_sub(1) {
+                        Some(num) => { jump_counts[label] = num; }
+                        None => {
+                            let x = buffer.x - 3;
+                            let did_remove = buffer.jump_xs.remove(&x);
+                            // assert!(did_remove);
+                        }
                     }
                 }
                 AsmCommand::Push(num) => {

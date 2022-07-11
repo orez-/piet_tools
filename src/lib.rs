@@ -654,7 +654,7 @@ pub fn load(filename: &str, codel_size: u32) -> Result<PietCode, String> {
     to_codels(img, codel_size)
 }
 
-pub fn save(code: PietCode, filename: &str, codel_size: u32) -> ImageResult<()> {
+pub fn save(code: &PietCode, filename: &str, codel_size: u32) -> ImageResult<()> {
     let img = to_image(code, codel_size);
     img.save(filename)
 }
@@ -687,14 +687,14 @@ fn to_codels(img: DynamicImage, codel_size: u32) -> Result<PietCode, String> {
     })
 }
 
-fn to_image(code: PietCode, codel_size: u32) -> RgbImage {
+fn to_image(code: &PietCode, codel_size: u32) -> RgbImage {
     // TODO: options to handle Other pixels.
     // Currently hardcoded to a nice purple
     const OTHER_COLOR: Rgb<u8> = Rgb([0x73, 0x26, 0xb1]);
     let PietCode { width, height, .. } = code;
     let mut img = RgbImage::new(
-        width as u32 * codel_size,
-        height as u32 * codel_size,
+        *width as u32 * codel_size,
+        *height as u32 * codel_size,
     );
     for (x, y, codel) in code.codels() {
         let img_x = x as u32 * codel_size;

@@ -11,6 +11,13 @@ const BIG_NUMBER: u32 = 100;
 pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
     use AsmCommand::*;
 
+    // Remove labels with no jumps
+    asm.cmds.retain(|cmd| {
+        !matches!(cmd, AsmCommand::Label(id)
+            if asm.jump_counts[*id] == 0
+        )
+    });
+
     // TODO: [dyad, POP] => [POP, POP]
     // let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); _] = [
     let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); 1] = [
@@ -106,17 +113,38 @@ mod tests {
     use super::*;
     use crate::asm::AsmCommand::*;
 
+    fn to_piet_asm(cmds: Vec<AsmCommand>) -> PietAsm {
+        let count = cmds.iter().filter(|c| matches!(c, Label(_))).count();
+        let mut jump_counts = vec![0; count];
+        for cmd in &cmds {
+            match cmd {
+                Jump(id) | JumpIf(id) => {
+                    jump_counts[*id] += 1;
+                }
+                _ => (),
+            }
+        }
+        PietAsm { cmds, jump_counts }
+    }
+
     #[test]
     fn test_dup_pushes() {
-        let asm = PietAsm { cmds: vec![push(5), push(2), push(2), push(2), push(8), push(8)] };
+        let asm = to_piet_asm(vec![push(5), push(2), push(2), push(2), push(8), push(8)]);
         let PietAsm { cmds, .. } = optimize(asm);
         assert_eq!(cmds, vec![push(5), push(2), Duplicate, Duplicate, push(8), Duplicate]);
     }
 
     #[test]
     fn test_stack_bump() {
-        let asm = PietAsm { cmds: vec![push(1), Multiply] };
+        let asm = to_piet_asm(vec![push(1), Multiply]);
         let PietAsm { cmds, .. } = optimize(asm);
         assert_eq!(cmds, vec![push(1), Multiply]);
+    }
+
+    #[test]
+    fn test_rm_unused_labels() {
+        let asm = to_piet_asm(vec![Label(0), push(1), Label(1), push(2), Label(2), Jump(1)]);
+        let PietAsm { cmds, .. } = optimize(asm);
+        assert_eq!(cmds, vec![push(1), Label(1), push(2), Jump(1)]);
     }
 }

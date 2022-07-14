@@ -18,6 +18,19 @@ pub(super) fn optimize(mut asm: PietAsm) -> PietAsm {
         )
     });
 
+    // Jumps immediately preceding their label
+    while let Some((idx, id)) = asm.cmds
+            .windows(2)
+            .enumerate()
+            .filter_map(|(i, w)| match w {
+                [Jump(a), Label(b)] if a == b => Some((i, *a)),
+                _ => None,
+            })
+            .next() {
+        asm.cmds.remove(idx);
+        asm.jump_counts[id] -= 1;
+    }
+
     // TODO: [dyad, POP] => [POP, POP]
     // let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); _] = [
     let constant_patterns: [(Vec<AsmCommand>, Vec<AsmCommand>); 1] = [
@@ -146,5 +159,19 @@ mod tests {
         let asm = to_piet_asm(vec![Label(0), push(1), Label(1), push(2), Label(2), Jump(1)]);
         let PietAsm { cmds, .. } = optimize(asm);
         assert_eq!(cmds, vec![push(1), Label(1), push(2), Jump(1)]);
+    }
+
+    #[test]
+    fn test_rm_unnecessary_jump() {
+        let asm = to_piet_asm(vec![Jump(0), Label(0), Jump(0)]);
+        let PietAsm { cmds, .. } = optimize(asm);
+        assert_eq!(cmds, vec![Label(0), Jump(0)]);
+    }
+
+    #[test]
+    fn test_rm_unnecessary_jump_and_label() {
+        let asm = to_piet_asm(vec![Jump(0), Label(0)]);
+        let PietAsm { cmds, .. } = optimize(asm);
+        assert_eq!(cmds, vec![]);
     }
 }

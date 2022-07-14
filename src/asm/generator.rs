@@ -477,6 +477,8 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                               #
                         ")?;
                         buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
+                        buffer.jump_xs.remove(&(buffer.x - 1));
+                        buffer.jump_xs.insert(buffer.x - 2);
                         labels.insert(label, (dest - 1, buffer.y + 1));
                     }
                     else {
@@ -493,8 +495,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         Some(num) => { jump_counts[label] = num; }
                         None => {
                             let x = buffer.x - 2;
-                            let did_remove = buffer.jump_xs.remove(&x);
-                            // assert!(did_remove);
+                            buffer.jump_xs.remove(&x);
                         }
                     }
                 }
@@ -516,9 +517,8 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     match jump_counts[label].checked_sub(1) {
                         Some(num) => { jump_counts[label] = num; }
                         None => {
-                            let x = buffer.x - 4;
-                            let did_remove = buffer.jump_xs.remove(&x);
-                            // assert!(did_remove);
+                            let x = buffer.x - 3;
+                            buffer.jump_xs.remove(&x);
                         }
                     }
                 }
@@ -570,8 +570,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         Some(num) => { jump_counts[label] = num; }
                         None => {
                             let x = buffer.x - 3;
-                            let did_remove = buffer.jump_xs.remove(&x);
-                            // assert!(did_remove);
+                            buffer.jump_xs.remove(&x);
                         }
                     }
                 }

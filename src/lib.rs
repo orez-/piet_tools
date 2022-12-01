@@ -454,7 +454,7 @@ impl PietVM {
             } {
                 match color {
                     Color::Black => { break; }
-                    Color::Other => { panic!(); }
+                    Color::Other => { panic!("invalid color while sliding"); }
                     Color::White => { self.pos = (nx, ny); }
                     color => { return Some(((nx, ny), color)); }
                 }

@@ -56,7 +56,12 @@ impl DrawPattern {
                     if start_y.is_some() { panic!(); }
                     start_y = Some(y);
                 }
-                _ if x == 0 => { panic!(); }
+                b'\n' => {
+                    x = 0;
+                    y += 1;
+                    continue;
+                }
+                c if x == 0 => { panic!("unrecognized leftmost char in pattern: {:?}", *c as char); }
                 b'>' => {
                     if end.is_some() { panic!(); }
                     end = Some((x - 1, y));
@@ -66,11 +71,6 @@ impl DrawPattern {
                 b'a'..=b'z' => {
                     let idx = (c - b'a') as usize;
                     pixels.push((x - 1, y, colors[idx]));
-                }
-                b'\n' => {
-                    x = 0;
-                    y += 1;
-                    continue;
                 }
                 _ => { panic!(); }
             }
@@ -476,7 +476,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                             #..
                               #
                         ")?;
-                        buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
+                        buffer.draw_jump(dest, y0, buffer.y + 1)?;
                         buffer.jump_xs.remove(&(buffer.x - 1));
                         buffer.jump_xs.insert(buffer.x - 2);
                         labels.insert(label, (dest - 1, buffer.y + 1));
@@ -500,7 +500,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     }
                 }
                 AsmCommand::Jump(label) => {
-                    // Label already exists
+                    // connecting to an existing label
                     if let Some(&(dest, y0)) = labels.get(&label) {
                         buffer.advance_to(dest - 1)?;
                         draw_here!(buffer, b"
@@ -511,8 +511,17 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         ")?;
                         buffer.draw_jump(dest, y0, buffer.y + 1)?;
                     }
+                    // connecting to an existing jump
+                    else if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
+                        buffer.advance_to(dest)?;
+                        draw_here!(buffer, b"\n>.#")?;
+                        buffer.draw_jump(dest, y0, buffer.y + 1)?;
+                    }
                     else {
-                        return Err(DrawError::Todo);
+                        draw!(buffer, b"\n>.#")?;
+                        let x = buffer.x - 2;
+                        buffer.jump_xs.insert(x);
+                        unmatched_jumps.insert(label, (x, buffer.y + 1));
                     }
                     match jump_counts[label].checked_sub(1) {
                         Some(num) => { jump_counts[label] = num; }
@@ -546,8 +555,8 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                            >.abb>
                               b
                         ", a, b)?;
-                        buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
-                        unmatched_jumps.insert(label, (dest, buffer.y + 1));
+                        buffer.draw_jump(dest, y0, buffer.y + 1)?;
+                        unmatched_jumps.insert(label, (dest, buffer.y + 2));
                     }
                     // first of their name
                     else {
@@ -568,7 +577,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         edit.draw_pixel(x + 1, 1, color)?;
                         mem::drop(edit);
                         buffer.jump_xs.insert(buffer.x + x);
-                        let key = (buffer.x + x, buffer.y + 1);
+                        let key = (buffer.x + x, buffer.y + 3);
                         unmatched_jumps.insert(label, key);
                         buffer.x += x + 2;
                         buffer.last_color = Some(color);

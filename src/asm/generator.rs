@@ -537,10 +537,17 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                         buffer.draw_jump(dest, y0, buffer.y + 1)?;
                     }
                     // connecting to an existing jump
-                    else if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
-                        buffer.advance_to(dest - 1)?;
-                        eprintln!("jumpif to jumpif");
-                        return Err(DrawError::Todo);
+                    else if let Some((dest, y0)) = unmatched_jumps.remove(&label) {
+                        buffer.advance_to(dest - 2)?;
+                        let a = CONTROL_COLOR;
+                        let b = a.next_for_command(Command::Pointer);
+                        draw_here!(buffer, b"
+                              .
+                           >.abb>
+                              b
+                        ", a, b)?;
+                        buffer.draw_jump(dest, y0 + 2, buffer.y + 1)?;
+                        unmatched_jumps.insert(label, (dest, buffer.y + 1));
                     }
                     // first of their name
                     else {

@@ -423,7 +423,7 @@ impl PietVM {
             let coord @ (x, y) = region.exit_to(self.instruction_pointer);
             match code.at(x, y) {
                 None | Some(Color::Black) => (),
-                Some(Color::Other) => { panic!(); }
+                Some(Color::Other) => { panic!("invalid color while walking [{x}, {y}]"); }
                 Some(color) => { return Some((region, coord, color)); }
             }
             self.instruction_pointer.flip();

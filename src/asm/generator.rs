@@ -556,7 +556,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                               b
                         ", a, b)?;
                         buffer.draw_jump(dest, y0, buffer.y + 1)?;
-                        unmatched_jumps.insert(label, (dest, buffer.y + 2));
+                        unmatched_jumps.insert(label, (dest, buffer.y + 3));
                     }
                     // first of their name
                     else {

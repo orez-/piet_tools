@@ -1,6 +1,7 @@
 use crate::asm::{AsmCommand, LabelId, PietAsm};
 use crate::{Color, Command, PietCode};
 use indoc::indoc;
+use log::{debug, info, error};
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
@@ -203,14 +204,14 @@ impl PietCodeBuffer {
                 // since we're returning the PCBE at the end here.
                 // TODO: hoist this metadata crap.
                 self.last_color = Some(Color::White);
-                println!("bumpin");
+                debug!("bumpin");
                 attempts += 1;
                 continue;
             }
             break;
         }
         if attempts >= ATTEMPTS {
-            eprintln!("too many attempts");
+            error!("too many attempts");
             return Err(DrawError::AllocationError);
         }
         let area = Rect { x: self.x, y: self.y, width, height };
@@ -219,7 +220,7 @@ impl PietCodeBuffer {
     }
 
     fn advance_to(&mut self, to_x: usize) -> Result<(), DrawError> {
-        println!("advance to {to_x} (from {})", self.x);
+        info!("advance to {to_x} (from {})", self.x);
         let do_draw = self.last_color.is_some();
         if to_x < self.x {  // passed already
             let height = ROW_HEIGHT;
@@ -247,7 +248,7 @@ impl PietCodeBuffer {
     }
 
     fn draw_jump(&mut self, x: usize, y0: usize, y1: usize) -> Result<(), DrawError> {
-        println!("draw_jump: {x} {y0} {y1}");
+        info!("draw_jump: {x} {y0} {y1}");
         assert!(y0 < y1);
         let mut edit = PietCodeBufferEdit::new(self);
         edit.draw_rect(x, y0, 1, y1 - y0, Color::White)
@@ -465,7 +466,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
         buffer.last_color = Some(CONTROL_COLOR);
 
         for cmd in cmds {
-            println!("{cmd:?}");
+            info!("{cmd:?}");
             match cmd {
                 AsmCommand::Label(label) => {
                     if let Some(&(dest, y0)) = unmatched_jumps.get(&label) {
@@ -603,7 +604,6 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
                     let (mut edit, _) = buffer.allocate(width + 5)?;
                     let mut x = 0;
                     if has_color {
-                        // println!("drawin intro");
                         edit.draw_pixel(0, 1, Color::White)?;
                         x = 1;
                     }
@@ -642,7 +642,7 @@ pub(super) fn generate(asm: PietAsm) -> PietCode {
     match res {
         Ok(_) => (),
         Err(e) => {
-            println!("error: {e:?}");
+            error!("error: {e:?}");
         }
     }
     buffer.into()

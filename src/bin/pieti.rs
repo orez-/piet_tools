@@ -1,6 +1,7 @@
 use std::env;
 
 fn main() -> Result<(), String> {
+    env_logger::init();
     let args = env::args().collect::<Vec<_>>();
     let (filename, codel_size) = match args.as_slice() {
         [_, f, c] => (f, c),

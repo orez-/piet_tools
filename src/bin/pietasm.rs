@@ -45,6 +45,7 @@ fn build(filename: &str, codel_size: u32) -> Result<(PietCode, String), String> 
 }
 
 fn main() -> Result<(), String> {
+    env_logger::init();
     let owned_args: Vec<_> = env::args().collect();
     let args: Vec<_> = owned_args.iter().map(|x| x.as_str()).collect();
     match args.as_slice() {

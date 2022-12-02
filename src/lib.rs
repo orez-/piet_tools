@@ -1,5 +1,6 @@
 use image::{self, DynamicImage, GenericImageView, ImageResult, Rgb, Rgba, RgbImage};
 use itertools::iproduct;
+use log::info;
 use num_bigint::BigInt;
 use num_derive::FromPrimitive;
 use num_integer::Integer;
@@ -596,11 +597,11 @@ impl PietVM {
     pub fn step(&mut self, code: &PietCode) -> bool {
         let (x, y) = self.pos;
         let color = code.at(x, y).unwrap();
-        eprintln!("{:?}", self.stack);
+        info!("{:?}", self.stack);
         match color {
             Color::White => match self.walk_white(code) {
                 Some((coord, color)) => {
-                    eprintln!("(White -> {color:?}) [{coord:?}]");
+                    info!("(White -> {color:?}) [{coord:?}]");
                     self.pos = coord;
                     true
                 }
@@ -611,12 +612,12 @@ impl PietVM {
                     else { return false; };
                 let command = region.color.step_to(next_color);
                 let value = region.value();
-                eprintln!(
+                info!(
                     "({:?} ({}) -> {:?}) [{coord:?}] = {command:?}",
                     region.color, value, next_color,
                 );
                 if let Err(err) = self.run_command(command, value) {
-                    eprintln!("Skipping command: {err}");
+                    info!("Skipping command: {err}");
                 }
                 self.pos = coord;
                 true
